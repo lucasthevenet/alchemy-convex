@@ -1,0 +1,7 @@
+{
+  "name": "convex-fixture",
+  "private": true,
+  "dependencies": {
+    "convex": "1.42.3"
+  }
+}
