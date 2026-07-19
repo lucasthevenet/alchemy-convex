@@ -102,7 +102,7 @@ const deploymentNameFromKey = (deployKey: string): string | undefined => {
   return undefined;
 };
 
-const urlPattern = /https:\/\/[a-z0-9-]+\.convex\.cloud\b/gi;
+const urlPattern = /https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)?\.convex\.cloud\b/gi;
 
 export const deploymentMetadata = (
   deployKey: string,
@@ -111,7 +111,8 @@ export const deploymentMetadata = (
 ): Omit<ConvexDeployResult, "stdout" | "stderr"> => {
   const urls = output.match(urlPattern);
   const nameFromKey = deploymentNameFromKey(deployKey);
-  const url = urls?.at(-1) ??
+  const url =
+    urls?.at(-1) ??
     (nameFromKey ? `https://${nameFromKey}.convex.cloud` : undefined);
 
   if (!url) {
@@ -122,10 +123,7 @@ export const deploymentMetadata = (
     });
   }
 
-  const deploymentName = new URL(url).hostname.slice(
-    0,
-    -".convex.cloud".length,
-  );
+  const deploymentName = new URL(url).hostname.split(".")[0]!;
 
   return {
     deploymentName,

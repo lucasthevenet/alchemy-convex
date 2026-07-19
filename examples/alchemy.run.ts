@@ -1,5 +1,4 @@
 import * as Alchemy from "alchemy";
-import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Convex from "../src/index.js";
 
@@ -10,11 +9,8 @@ export default Alchemy.Stack(
     state: Alchemy.localState(),
   },
   Effect.gen(function* () {
-    const deployKey = yield* Config.redacted("CONVEX_DEPLOY_KEY");
-
-    const backend = yield* Convex.Deployment("Backend", {
+    const backend = yield* Convex.Project("Backend", {
       projectDir: ".",
-      deployKey,
       env: {
         APP_ENV: "production",
       },

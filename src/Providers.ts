@@ -1,26 +1,51 @@
 import * as Layer from "effect/Layer";
 import * as Provider from "alchemy/Provider";
-import { Deployment, DeploymentProvider } from "./Deployment.js";
+import { CredentialsStoreLive, ProfileLive } from "alchemy/Auth";
+import { ConvexAuth } from "./AuthProvider.js";
+import { fromAuthProvider } from "./Credentials.js";
+import { Project, ProjectProvider } from "./Project.js";
 import {
-  ConvexCli,
-  ConvexCliLive,
-  type ConvexCliOptions,
-} from "./Runtime.js";
+  ConvexManagementApi,
+  ConvexManagementApiLive,
+  type ConvexManagementApiOptions,
+} from "./ManagementApi.js";
+import type { ConvexOAuthOptions } from "./OAuthClient.js";
+import { ConvexCli, ConvexCliLive, type ConvexCliOptions } from "./Runtime.js";
 
 export class Providers extends Provider.ProviderCollection<Providers>()(
   "Convex",
 ) {}
 
 const providerCollection = () =>
-  Layer.effect(Providers, Provider.collection([Deployment])).pipe(
-    Layer.provide(DeploymentProvider()),
+  Layer.effect(Providers, Provider.collection([Project])).pipe(
+    Layer.provide(ProjectProvider()),
   );
 
-/** Register Convex resources using the local Convex CLI runtime. */
-export const providers = (options: ConvexCliOptions = {}) =>
-  providerCollection().pipe(Layer.provide(ConvexCliLive(options)));
+export interface ConvexProviderOptions
+  extends ConvexCliOptions, ConvexManagementApiOptions {
+  readonly oauth?: ConvexOAuthOptions;
+}
 
-/** Supply a custom CLI implementation, primarily for provider tests. */
+/** Register Convex resources using the local CLI and Management API. */
+export const providers = (options: ConvexProviderOptions = {}) => {
+  const credentials = fromAuthProvider();
+  const management = ConvexManagementApiLive(options).pipe(
+    Layer.provide(credentials),
+  );
+  return providerCollection().pipe(
+    Layer.provide(management),
+    Layer.provide(ConvexCliLive(options)),
+    Layer.provideMerge(credentials),
+    Layer.provideMerge(ConvexAuth(options.oauth)),
+    Layer.provideMerge(ProfileLive),
+    Layer.provideMerge(CredentialsStoreLive),
+    Layer.orDie,
+  );
+};
+
+/** Supply custom runtime services, primarily for provider tests. */
 export const providersWithRuntime = (
   runtime: Layer.Layer<ConvexCli, never, never>,
-) => providerCollection().pipe(Layer.provide(runtime));
+  management: Layer.Layer<ConvexManagementApi, never, never>,
+) =>
+  providerCollection().pipe(Layer.provide(runtime), Layer.provide(management));

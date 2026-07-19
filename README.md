@@ -3,28 +3,26 @@
 `alchemy-convex` is an experimental Alchemy v2 provider for deploying a
 standard Convex project from an Alchemy stack.
 
-The MVP deliberately keeps Convex as the source of truth for backend code. It
-adds two pieces:
+The MVP contains four pieces:
 
-- `Convex.Deployment`, an Alchemy `Platform` resource that participates in the
-  Alchemy plan, binding, state, and provider lifecycle.
+- `Convex.Project`, an Alchemy `Platform` resource participating in plan,
+  binding, state, and provider lifecycles.
 - `ConvexCli`, a replaceable Effect service that reconciles environment
-  variables and runs the project's local `convex deploy` command.
+  variables and invokes the project's local Convex CLI.
+- `ConvexAuth`, an Alchemy Auth Provider supporting a Convex team access token
+  or an OAuth application token.
+- `ConvexManagementApi`, which turns those durable credentials into a
+  deployment-scoped key only while reconciliation is running.
 
-The Convex CLI still performs typechecking, code generation, bundling, and the
-actual push. This follows Convex's recommendation to use the CLI for pushing
-code instead of rebuilding its deployment protocol in an integration.
+The Convex CLI still owns typechecking, code generation, bundling, and the code
+push. This follows Convex's recommendation to use its CLI rather than reproduce
+the private deployment protocol in an integration.
 
 ## Status
 
-This is an MVP built against:
-
-- Alchemy `2.0.0-beta.63`
-- Effect `4.0.0-beta.99`
-- Convex `1.42.3`
-
-Alchemy v2 and Effect 4 are prereleases, so minor compatibility adjustments
-may be needed as their APIs stabilize.
+This is an MVP built against Alchemy `2.0.0-beta.63`, Effect
+`4.0.0-beta.99`, and Convex `1.42.3`. Alchemy v2 and Effect 4 are prereleases,
+so compatibility adjustments may be needed while their APIs stabilize.
 
 ## Install
 
@@ -33,17 +31,67 @@ bun add alchemy-convex "alchemy@next" convex "effect@beta" \
   "@effect/platform-bun@beta" "@effect/platform-node@beta"
 ```
 
-Create a production deploy key with the `deployment:deploy` permission in the
-Convex dashboard and expose it to Alchemy as `CONVEX_DEPLOY_KEY`. The key is
-passed to the child process through its environment and is never placed in CLI
-arguments or resource outputs.
+## Authentication
+
+Run Alchemy's profile configuration:
+
+```sh
+bun alchemy login --configure
+```
+
+The Convex provider offers three methods:
+
+- **Environment Variable** reads an access token from
+  `CONVEX_ACCESS_TOKEN`. This is selected automatically when `CI=1`.
+- **OAuth** opens Convex in the browser and stores the resulting application
+  token under the active Alchemy profile.
+- **Access Token** prompts securely and stores the token under
+  `~/.alchemy/credentials/<profile>/`.
+
+Create team access tokens from the Convex Team Settings access-token page. A
+token remains constrained by the permissions of the member who created it, so
+a dedicated service account is recommended for automation.
+
+OAuth requires a Convex OAuth application. Register a localhost redirect URI
+of `http://localhost:9977/auth/callback`, then provide the application
+credentials only to the login process:
+
+```sh
+CONVEX_OAUTH_CLIENT_ID='...' \
+CONVEX_OAUTH_CLIENT_SECRET='...' \
+bun alchemy login --configure
+```
+
+OAuth uses the team authorization flow by default. To request a project-scoped
+token or use another registered localhost redirect URI:
+
+```ts
+providers: Convex.providers({
+  oauth: {
+    scope: "project",
+    redirectUri: "http://localhost:9980/auth/callback",
+  },
+}),
+```
+
+Register that exact redirect URI in the Convex application first. `clientId`
+and `clientSecret` can also be supplied through the `oauth` object, but
+environment variables avoid putting the application secret in source code.
+
+`CONVEX_DEPLOY_KEY` is intentionally not an Auth Provider credential. During a
+reconciliation, `ConvexManagementApi` asks Convex for a deploy-key view of the
+target deployment. With a team access token this is a least-privilege,
+one-hour key that is revoked after the CLI exits; the expiry limits exposure if
+cleanup cannot run. With OAuth, Convex returns a deployment-scoped view backed
+by the same OAuth grant, so the provider does not attempt to revoke it as a
+deploy key. No deploy key is written to Alchemy profiles, resource props,
+outputs, state, or CLI arguments.
 
 ## Use
 
 ```ts
 import * as Alchemy from "alchemy";
 import * as Convex from "alchemy-convex";
-import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 
 export default Alchemy.Stack(
@@ -53,11 +101,8 @@ export default Alchemy.Stack(
     state: Alchemy.localState(),
   },
   Effect.gen(function* () {
-    const deployKey = yield* Config.redacted("CONVEX_DEPLOY_KEY");
-
-    const backend = yield* Convex.Deployment("Backend", {
+    const backend = yield* Convex.Project("Backend", {
       projectDir: ".",
-      deployKey,
       env: {
         APP_ENV: "production",
       },
@@ -77,19 +122,38 @@ Run the stack normally:
 bun alchemy deploy
 ```
 
-`projectDir` must contain the Convex project's `package.json`. The runtime
-resolves and invokes that project's installed Convex CLI, so no global CLI is
-required. An explicit executable can be configured with
+`name` is optional. When both `name` and `projectId` are omitted, the provider
+derives a stable project name from the Alchemy stack, stage, and resource ID.
+With a team-scoped token it resolves that name in the authorized team and
+creates the project when none exists. `teamId` can override the team inferred
+from the token.
+
+To adopt an existing project, provide its numeric project ID:
+
+```ts
+yield* Convex.Project("ExistingBackend", {
+  projectId: 42,
+  projectDir: ".",
+});
+```
+
+Project-scoped OAuth tokens automatically adopt their authorized project. The
+provider ensures that the project has a default production deployment and uses
+that deployment as the internal CLI target. Deployments are not exposed as
+independently managed resources in this MVP.
+
+The authenticated token must be allowed to access the project. `projectDir`
+must contain the project's `package.json`; the runtime invokes that project's
+installed Convex CLI, so no global CLI is required. Override the executable with
 `Convex.providers({ binary: "/path/to/convex" })`.
 
-## Bind outputs as Convex environment variables
+## Bind outputs as environment variables
 
 Use `bindEnvironment` to connect values produced by other Alchemy resources:
 
 ```ts
-const backend = yield* Convex.Deployment("Backend", {
+const backend = yield* Convex.Project("Backend", {
   projectDir: "./apps/backend",
-  deployKey,
 });
 
 yield* Convex.bindEnvironment(backend, {
@@ -97,45 +161,20 @@ yield* Convex.bindEnvironment(backend, {
 });
 ```
 
-Bindings are merged with `env`; explicit `env` entries win on a name conflict.
-Managed environment variables removed from the stack are removed from Convex
-on the next deployment.
-
-## Previews
-
-A preview deploy key can claim or reuse a named preview deployment:
-
-```ts
-const backend = yield* Convex.Deployment("PreviewBackend", {
-  projectDir: ".",
-  deployKey: previewDeployKey,
-  preview: {
-    name: "pull-123",
-    recreate: false,
-  },
-});
-```
-
-Set `recreate: true` to use Convex's `--preview-create` behavior instead of
-`--preview-name`.
-
-Managed `env`/`bindEnvironment` values are not supported with preview deploy
-keys in this MVP. Convex must first claim a preview before that deployment can
-be selected by its environment commands. Supporting that safely requires a
-separate preview-provisioning phase rather than a potentially broken first
-code push.
+Bindings are merged with `env`; direct `env` entries win on a name conflict.
+Managed variables removed from the stack are removed from Convex on the next
+deployment.
 
 ## Change detection and lifecycle
 
 The provider hashes the project tree and skips `convex deploy` when both props
 and source are unchanged. It excludes secrets, dependencies, build outputs,
-Alchemy state, and `convex/_generated` by default. For a monorepo, customize
-the hash inputs:
+Alchemy state, and `convex/_generated` by default. Monorepos can customize hash
+inputs:
 
 ```ts
-yield* Convex.Deployment("Backend", {
+yield* Convex.Project("Backend", {
   projectDir: ".",
-  deployKey,
   source: {
     include: ["convex/**", "packages/domain/**", "package.json", "bun.lock"],
     exclude: ["packages/domain/test/**"],
@@ -143,26 +182,24 @@ yield* Convex.Deployment("Backend", {
 });
 ```
 
-`alwaysDeploy: true` disables this memoization.
+`alwaysDeploy: true` disables memoization.
 
-Destroying the Alchemy resource intentionally does **not** delete the Convex
-cloud deployment, its functions, or its data. The MVP models deployment of a
-code revision, not ownership of the Convex project. Project/deployment creation
-through the Convex Management API belongs in a future resource with explicit,
-safe deletion semantics.
+Destroying the Alchemy resource does not delete the Convex project, its
+deployments, functions, or data. Destructive project ownership and independently
+managed dev, preview, or custom deployments need explicit lifecycle semantics
+before they are added.
 
-## What “custom runtime” means in this MVP
+## What “custom runtime” means here
 
-`Deployment` is constructed with Alchemy's `Platform` API and has a
-Convex-specific `BaseRuntimeContext`. At plan time, it captures Alchemy Outputs
-and bindings into the deployment environment. Its provider then hands the
-source tree to the Convex CLI, which packages code for the real managed Convex
-runtime.
+`Project` uses Alchemy's `Platform` API with a Convex-specific
+`BaseRuntimeContext`. At plan time it captures Alchemy Outputs and bindings as
+Convex environment variables. Its provider then gives the source tree to the
+Convex CLI, which packages functions for Convex's managed runtime.
 
-It does not yet translate arbitrary Effect HTTP handlers into Convex queries,
-mutations, or actions. A deeper runtime will require a stable function manifest
-or code-generation boundary—ideally shared with Confect—before it can be
-implemented without coupling to private Convex or Confect internals.
+It does not translate arbitrary Effect HTTP handlers into Convex queries,
+mutations, or actions. That deeper runtime needs a stable function manifest or
+code-generation boundary, ideally shared with Confect, before depending on
+private Convex or Confect internals.
 
 ## Development
 
@@ -173,5 +210,6 @@ bun run test
 bun run build
 ```
 
-Provider tests use an injected `ConvexCli` Layer, so they exercise Alchemy's
-create/no-op/destroy lifecycle without accessing a real Convex deployment.
+Provider tests inject `ConvexCli` and `ConvexManagementApi` Layers, so they
+exercise Alchemy's create/no-op/update/destroy lifecycle without touching a
+real Convex deployment or local profile.

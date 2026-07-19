@@ -31,6 +31,20 @@ describe("deploymentMetadata", () => {
       url: "https://quick-fox-456.convex.cloud",
     });
   });
+
+  it("preserves regional deployment URLs", () => {
+    expect(
+      deploymentMetadata(
+        "prod:kind-otter-123|secret",
+        "Deployed to https://kind-otter-123.eu-west-1.convex.cloud",
+      ),
+    ).toEqual({
+      deploymentName: "kind-otter-123",
+      deploymentType: "prod",
+      url: "https://kind-otter-123.eu-west-1.convex.cloud",
+      httpActionsUrl: "https://kind-otter-123.eu-west-1.convex.site",
+    });
+  });
 });
 
 describe("hashProject", () => {
@@ -40,17 +54,29 @@ describe("hashProject", () => {
       await mkdir(join(directory, "convex", "_generated"), {
         recursive: true,
       });
-      await writeFile(join(directory, "convex", "notes.ts"), "export const a = 1;");
-      await writeFile(join(directory, "convex", "_generated", "api.js"), "first");
+      await writeFile(
+        join(directory, "convex", "notes.ts"),
+        "export const a = 1;",
+      );
+      await writeFile(
+        join(directory, "convex", "_generated", "api.js"),
+        "first",
+      );
       await writeFile(join(directory, ".env.local"), "SECRET=first");
 
       const first = await Effect.runPromise(hashProject(directory));
-      await writeFile(join(directory, "convex", "_generated", "api.js"), "second");
+      await writeFile(
+        join(directory, "convex", "_generated", "api.js"),
+        "second",
+      );
       await writeFile(join(directory, ".env.local"), "SECRET=second");
       const ignoredChanges = await Effect.runPromise(hashProject(directory));
       expect(ignoredChanges).toBe(first);
 
-      await writeFile(join(directory, "convex", "notes.ts"), "export const a = 2;");
+      await writeFile(
+        join(directory, "convex", "notes.ts"),
+        "export const a = 2;",
+      );
       const sourceChange = await Effect.runPromise(hashProject(directory));
       expect(sourceChange).not.toBe(first);
     } finally {
