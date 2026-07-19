@@ -6,6 +6,7 @@ import {
   getEnvRedacted,
   retryOnce,
   type ConfigureContext,
+  type CredentialsStoreService,
 } from "alchemy/Auth";
 import * as Clank from "alchemy/Util/Clank";
 import * as Console from "effect/Console";
@@ -66,6 +67,75 @@ const options: Array<{
     hint: "enter interactively, stored in ~/.alchemy/credentials",
   },
 ];
+
+/** Resolve a configured Convex credential using the caller's active store. */
+export const readCredentials = (
+  store: CredentialsStoreService,
+  profileName: string,
+  config: ConvexAuthConfig,
+): Effect.Effect<ConvexResolvedCredentials, AuthError> =>
+  Match.value(config).pipe(
+    Match.when(
+      { method: "env" },
+      Effect.fn(function* () {
+        const accessToken = yield* getEnvRedacted(CONVEX_ACCESS_TOKEN_ENV_NAME);
+        if (!accessToken || Redacted.value(accessToken).length === 0) {
+          return yield* new AuthError({
+            message: `Convex environment credentials not found. Set ${CONVEX_ACCESS_TOKEN_ENV_NAME}.`,
+          });
+        }
+        return {
+          type: "accessToken" as const,
+          accessToken,
+          source: {
+            type: "env" as const,
+            details: CONVEX_ACCESS_TOKEN_ENV_NAME,
+          },
+        };
+      }),
+    ),
+    Match.when({ method: "stored" }, () =>
+      store
+        .read<ConvexStoredCredentials>(profileName, storedCredentialName)
+        .pipe(
+          Effect.flatMap((credentials) =>
+            credentials == null || credentials.type !== "accessToken"
+              ? Effect.fail(
+                  new AuthError({
+                    message:
+                      "Convex stored access token not found. Run: alchemy login --configure",
+                  }),
+                )
+              : Effect.succeed({
+                  type: "accessToken" as const,
+                  accessToken: Redacted.make(credentials.accessToken),
+                  source: { type: "stored" as const },
+                }),
+          ),
+        ),
+    ),
+    Match.when({ method: "oauth" }, () =>
+      store
+        .read<OAuthClient.OAuthCredentials>(profileName, oauthCredentialName)
+        .pipe(
+          Effect.flatMap((credentials) =>
+            credentials == null || credentials.type !== "oauth"
+              ? Effect.fail(
+                  new AuthError({
+                    message:
+                      "Convex OAuth credentials not found. Run: alchemy login",
+                  }),
+                )
+              : Effect.succeed({
+                  type: "oauth" as const,
+                  accessToken: Redacted.make(credentials.access),
+                  source: { type: "oauth" as const },
+                }),
+          ),
+        ),
+    ),
+    Match.exhaustive,
+  );
 
 /** Registers Convex access-token and OAuth authentication with `alchemy login`. */
 export const ConvexAuth = () =>
@@ -149,73 +219,7 @@ export const ConvexAuth = () =>
         profileName: string,
         config: ConvexAuthConfig,
       ): Effect.Effect<ConvexResolvedCredentials, AuthError> =>
-        Match.value(config).pipe(
-          Match.when(
-            { method: "env" },
-            Effect.fn(function* () {
-              const accessToken = yield* getEnvRedacted(
-                CONVEX_ACCESS_TOKEN_ENV_NAME,
-              );
-              if (!accessToken || Redacted.value(accessToken).length === 0) {
-                return yield* new AuthError({
-                  message: `Convex environment credentials not found. Set ${CONVEX_ACCESS_TOKEN_ENV_NAME}.`,
-                });
-              }
-              return {
-                type: "accessToken" as const,
-                accessToken,
-                source: {
-                  type: "env" as const,
-                  details: CONVEX_ACCESS_TOKEN_ENV_NAME,
-                },
-              };
-            }),
-          ),
-          Match.when({ method: "stored" }, () =>
-            store
-              .read<ConvexStoredCredentials>(profileName, storedCredentialName)
-              .pipe(
-                Effect.flatMap((credentials) =>
-                  credentials == null || credentials.type !== "accessToken"
-                    ? Effect.fail(
-                        new AuthError({
-                          message:
-                            "Convex stored access token not found. Run: alchemy login --configure",
-                        }),
-                      )
-                    : Effect.succeed({
-                        type: "accessToken" as const,
-                        accessToken: Redacted.make(credentials.accessToken),
-                        source: { type: "stored" as const },
-                      }),
-                ),
-              ),
-          ),
-          Match.when({ method: "oauth" }, () =>
-            store
-              .read<OAuthClient.OAuthCredentials>(
-                profileName,
-                oauthCredentialName,
-              )
-              .pipe(
-                Effect.flatMap((credentials) =>
-                  credentials == null || credentials.type !== "oauth"
-                    ? Effect.fail(
-                        new AuthError({
-                          message:
-                            "Convex OAuth credentials not found. Run: alchemy login",
-                        }),
-                      )
-                    : Effect.succeed({
-                        type: "oauth" as const,
-                        accessToken: Redacted.make(credentials.access),
-                        source: { type: "oauth" as const },
-                      }),
-                ),
-              ),
-          ),
-          Match.exhaustive,
-        );
+        readCredentials(store, profileName, config);
 
       const logout = (profileName: string, config: ConvexAuthConfig) =>
         Match.value(config).pipe(

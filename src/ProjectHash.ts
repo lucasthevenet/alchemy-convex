@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -47,6 +47,12 @@ export const hashProject = (
 
   return Effect.tryPromise({
     try: async () => {
+      const project = await stat(cwd);
+      if (!project.isDirectory()) {
+        throw new Error(`Convex project path is not a directory: ${cwd}`);
+      }
+      await readFile(resolve(cwd, "package.json"));
+
       const files = await fg([...(options.include ?? ["**/*"])], {
         cwd,
         absolute: false,

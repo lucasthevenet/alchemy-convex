@@ -182,6 +182,8 @@ describe("ConvexManagementApi", () => {
     const body = JSON.parse(
       String((fetchMock.mock.calls[0]![1] as RequestInit).body),
     );
+    expect(body).toMatchObject({ name: expect.stringMatching(/^alchemy-/) });
     expect(body).not.toHaveProperty("expiresAt");
+    expect(body).not.toHaveProperty("allowedActions");
   });
 });

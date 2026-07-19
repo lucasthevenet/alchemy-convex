@@ -273,13 +273,15 @@ export const ConvexManagementApiLive = (
               `/deployments/${deploymentName}/create_deploy_key`,
               {
                 name: keyName,
-                allowedActions: [
-                  "deployment:deploy",
-                  "deployment:env:view",
-                  "deployment:env:write",
-                ],
                 ...(resolved.type === "accessToken"
-                  ? { expiresAt: Date.now() + ttlMs }
+                  ? {
+                      allowedActions: [
+                        "deployment:deploy",
+                        "deployment:env:view",
+                        "deployment:env:write",
+                      ],
+                      expiresAt: Date.now() + ttlMs,
+                    }
                   : {}),
               },
             );

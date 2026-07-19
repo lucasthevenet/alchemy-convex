@@ -26,9 +26,7 @@ export interface ConvexProviderOptions
 /** Register Convex resources using the local CLI and Management API. */
 export const providers = (options: ConvexProviderOptions = {}) => {
   const credentials = fromAuthProvider();
-  const management = ConvexManagementApiLive(options).pipe(
-    Layer.provide(credentials),
-  );
+  const management = ConvexManagementApiLive(options);
   return providerCollection().pipe(
     Layer.provide(management),
     Layer.provide(ConvexCliLive(options)),

@@ -54,6 +54,7 @@ describe("hashProject", () => {
       await mkdir(join(directory, "convex", "_generated"), {
         recursive: true,
       });
+      await writeFile(join(directory, "package.json"), "{}");
       await writeFile(
         join(directory, "convex", "notes.ts"),
         "export const a = 1;",

@@ -10,7 +10,7 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* () {
     const backend = yield* Convex.Project("Backend", {
-      projectDir: ".",
+      projectDir: "./examples/convex-app",
       env: {
         APP_ENV: "production",
       },
