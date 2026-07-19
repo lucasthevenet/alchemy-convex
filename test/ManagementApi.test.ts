@@ -302,9 +302,61 @@ describe("ConvexManagementApi", () => {
       JSON.parse(String((fetchMock.mock.calls[1]![1] as RequestInit).body)),
     ).toEqual({
       type: "preview",
-      reference: "preview/my-stack-backend",
+      reference: "my-stack-backend",
       expiresAt: 2_000_000_000_000,
     });
+  });
+
+  it("cleans up a newly created deployment when Convex returns the wrong reference", async () => {
+    const fetchMock = vi.fn(
+      async (input: string | URL | Request, _init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/list_deployments?")) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (url.endsWith("/create_deployment")) {
+          return new Response(
+            JSON.stringify({
+              id: 100,
+              projectId: 42,
+              name: "accurate-grouse-679",
+              deploymentType: "preview",
+              reference: "preview/preview-lucas",
+              isDefault: false,
+              deploymentUrl: "https://accurate-grouse-679.convex.cloud",
+              expiresAt: null,
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(undefined, { status: 204 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const layer = ConvexManagementApiLive({
+      apiBaseUrl: "https://api.example.test/v1",
+    }).pipe(Layer.provide(credentialsLayer("accessToken")));
+
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const api = yield* ConvexManagementApi;
+          return yield* api.ensureDeployment({
+            projectId: 42,
+            type: "preview",
+            reference: "preview/lucas",
+          });
+        }).pipe(Effect.provide(layer)),
+      ),
+    ).rejects.toMatchObject({
+      _tag: "ConvexManagementApiError",
+      message: expect.stringContaining(
+        "has reference preview/preview-lucas, not preview/lucas",
+      ),
+    });
+    expect(String(fetchMock.mock.calls[2]![0])).toBe(
+      "https://api.example.test/v1/deployments/accurate-grouse-679/delete",
+    );
   });
 
   it("refuses to silently take ownership of an existing reference", async () => {

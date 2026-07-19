@@ -51,6 +51,19 @@ export interface EnsuredProject {
 
 export type ManagementDeploymentType = "prod" | "dev" | "preview";
 
+/**
+ * Preview creation accepts the identifier without its `preview/` namespace,
+ * but deployment reads return the fully-qualified reference. Dev references
+ * are accepted by the API exactly as supplied.
+ */
+const deploymentCreateReference = (
+  type: ManagementDeploymentType,
+  reference: string,
+) =>
+  type === "preview" && reference.startsWith("preview/")
+    ? reference.slice("preview/".length)
+    : reference;
+
 export interface EnsureDeploymentInput {
   readonly projectId: number;
   readonly name?: string;
@@ -472,6 +485,18 @@ export const ConvexManagementApiLive = (
             let createdDeployment = false;
             let managedDeployment = false;
 
+            const cleanupFailedCreate = (candidate: DeploymentResponse) =>
+              createdDeployment
+                ? ignoreNotFound(
+                    request<void>(
+                      "clean up invalid deployment",
+                      resolved.accessToken,
+                      "POST",
+                      `/deployments/${encodeURIComponent(candidate.name)}/delete`,
+                    ),
+                  ).pipe(Effect.asVoid)
+                : Effect.void;
+
             if (input.name !== undefined) {
               deployment = yield* getDeployment(input.name);
             } else if (
@@ -515,7 +540,10 @@ export const ConvexManagementApiLive = (
                   `/projects/${encodeURIComponent(String(input.projectId))}/create_deployment`,
                   {
                     type: input.type,
-                    reference: input.reference,
+                    reference: deploymentCreateReference(
+                      input.type,
+                      input.reference,
+                    ),
                     ...(input.type === "dev" ? { isDefault: false } : {}),
                     ...(input.expiresAt === undefined
                       ? {}
@@ -527,12 +555,14 @@ export const ConvexManagementApiLive = (
             }
 
             if (deployment.projectId !== input.projectId) {
+              yield* cleanupFailedCreate(deployment);
               return yield* new ConvexManagementApiError({
                 operation: "ensure deployment",
                 message: `Convex deployment ${deployment.name} belongs to project ${deployment.projectId}, not project ${input.projectId}.`,
               });
             }
             if (deployment.deploymentType !== input.type) {
+              yield* cleanupFailedCreate(deployment);
               return yield* new ConvexManagementApiError({
                 operation: "ensure deployment",
                 message: `Convex deployment ${deployment.name} has type ${deployment.deploymentType}, not ${input.type}.`,
@@ -542,6 +572,7 @@ export const ConvexManagementApiLive = (
               input.reference !== undefined &&
               deployment.reference !== input.reference
             ) {
+              yield* cleanupFailedCreate(deployment);
               return yield* new ConvexManagementApiError({
                 operation: "ensure deployment",
                 message: `Convex deployment ${deployment.name} has reference ${deployment.reference}, not ${input.reference}.`,

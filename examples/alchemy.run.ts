@@ -15,9 +15,7 @@ export default Alchemy.Stack(
 
     const deployment = yield* Convex.Deployment("BackendDeployment", {
       project,
-      env: {
-        APP_ENV: "production",
-      },
+      reference: "preview/lucas"
     });
 
     return {
