@@ -14,8 +14,7 @@
     "lint": "oxlint . --deny-warnings",
     "lint:fix": "oxlint . --fix",
     "format": "oxfmt .",
-    "format:check": "oxfmt --check .",
-    "ci": "bun run format:check && bun run lint && bun run check && bun run test && bun run build"
+    "format:check": "oxfmt --check ."
   },
   "devDependencies": {
     "oxfmt": "^0.59.0",
