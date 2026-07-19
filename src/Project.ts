@@ -57,15 +57,11 @@ export interface ProjectAttributes {
   readonly managedProject: boolean;
 }
 
-export interface ProjectBinding {
-  readonly env?: ConvexEnvironment;
-}
-
 export interface Project extends Resource<
   ProjectTypeId,
   ProjectProps,
   ProjectAttributes,
-  ProjectBinding,
+  never,
   Providers
 > {}
 
@@ -78,33 +74,6 @@ export const Project: Platform<Project, never, void, ConvexRuntimeContext> =
   Platform(ProjectTypeId, {
     createRuntimeContext: (id) => createConvexRuntimeContext(ProjectTypeId, id),
   });
-
-/** Attach Alchemy Outputs to a Convex project's managed environment vars. */
-export const bindEnvironment = (
-  project: Project,
-  environment: ProjectBinding["env"],
-): Effect.Effect<void> =>
-  Effect.forEach(
-    Object.entries(environment ?? {}),
-    ([name, value]) =>
-      project.bind(`env:${name}`, {
-        env: { [name]: value },
-      }),
-    { discard: true },
-  );
-
-const activeBindingEnvironment = (
-  bindings: readonly { data: ProjectBinding; action?: string }[],
-): ConvexEnvironment =>
-  bindings
-    .filter((binding) => binding.action !== "delete")
-    .reduce<ConvexEnvironment>(
-      (environment, binding) => ({
-        ...environment,
-        ...binding.data.env,
-      }),
-      {},
-    );
 
 export const ProjectProvider = () =>
   Provider.effect(
@@ -131,18 +100,9 @@ export const ProjectProvider = () =>
             action: sourceHash === output.sourceHash ? "noop" : "update",
           } as const;
         }),
-        reconcile: Effect.fn(function* ({
-          id,
-          news,
-          output,
-          bindings,
-          session,
-        }) {
+        reconcile: Effect.fn(function* ({ id, news, output, session }) {
           const projectDir = news.projectDir ?? ".";
-          const environment = {
-            ...activeBindingEnvironment(bindings),
-            ...news.env,
-          } satisfies ConvexEnvironment;
+          const environment = news.env ?? ({} satisfies ConvexEnvironment);
           const sourceHash = yield* hashProject(projectDir, news.source);
           const name =
             news.name ??

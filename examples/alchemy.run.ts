@@ -16,11 +16,6 @@ export default Alchemy.Stack(
       },
     });
 
-    // Other Alchemy resource Outputs can be attached after construction.
-    yield* Convex.bindEnvironment(backend, {
-      API_ORIGIN: "https://api.example.com",
-    });
-
     return {
       convexUrl: backend.url,
       convexHttpActionsUrl: backend.httpActionsUrl,

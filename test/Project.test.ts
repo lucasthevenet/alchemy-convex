@@ -1,5 +1,6 @@
 import { expect } from "@effect/vitest";
 import * as Test from "alchemy/Test/Vitest";
+import * as Output from "alchemy/Output";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -7,7 +8,6 @@ import {
   ConvexCli,
   ConvexManagementApi,
   Project,
-  bindEnvironment,
   providersWithRuntime,
   type ConvexDeployRequest,
   type EnsureProjectInput,
@@ -84,13 +84,12 @@ beforeEach(
 test.provider("deploys and memoizes a Convex project", (stack) =>
   Effect.gen(function* () {
     const program = Effect.gen(function* () {
-      const project = yield* Project("Backend", {
+      const web = { url: Output.literal("https://web.example.com") };
+      return yield* Project("Backend", {
         projectId: 42,
         projectDir: "test/fixtures/project",
-        env: { DIRECT: "value" },
+        env: { DIRECT: "value", SITE_URL: web.url },
       });
-      yield* bindEnvironment(project, { BOUND: "output" });
-      return project;
     });
 
     const created = yield* stack.deploy(program);
@@ -105,8 +104,8 @@ test.provider("deploys and memoizes a Convex project", (stack) =>
       "prod:kind-otter-123|secret",
     );
     expect(calls[0]?.environment).toEqual({
-      BOUND: "output",
       DIRECT: "value",
+      SITE_URL: "https://web.example.com",
     });
 
     const unchanged = yield* stack.deploy(program);
@@ -123,7 +122,7 @@ test.provider("deploys and memoizes a Convex project", (stack) =>
     expect(updated.environmentKeys).toEqual(["DIRECT"]);
     expect(calls).toHaveLength(2);
     expect(releases).toBe(2);
-    expect(calls[1]?.previousEnvironmentKeys).toEqual(["BOUND", "DIRECT"]);
+    expect(calls[1]?.previousEnvironmentKeys).toEqual(["DIRECT", "SITE_URL"]);
     expect(calls[1]?.environment).toEqual({ DIRECT: "next" });
   }),
 );

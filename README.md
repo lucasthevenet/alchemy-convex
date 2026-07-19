@@ -147,23 +147,28 @@ must contain the project's `package.json`; the runtime invokes that project's
 installed Convex CLI, so no global CLI is required. Override the executable with
 `Convex.providers({ binary: "/path/to/convex" })`.
 
-## Bind outputs as environment variables
+## Use resource outputs as environment variables
 
-Use `bindEnvironment` to connect values produced by other Alchemy resources:
+Pass outputs from other Alchemy resources directly in `env`, just like other
+Alchemy resources do:
 
 ```ts
-const backend = yield* Convex.Project("Backend", {
-  projectDir: "./apps/backend",
+const web = yield* Cloudflare.Worker("Web", {
+  main: "./src/worker.ts",
 });
 
-yield* Convex.bindEnvironment(backend, {
-  API_ORIGIN: api.url,
+const backend = yield* Convex.Project("Backend", {
+  projectDir: "./apps/backend",
+  env: {
+    APP_ENV: "production",
+    SITE_URL: web.url,
+  },
 });
 ```
 
-Bindings are merged with `env`; direct `env` entries win on a name conflict.
-Managed variables removed from the stack are removed from Convex on the next
-deployment.
+Alchemy resolves nested outputs before the Convex provider reconciles the
+project, so no separate binding helper is needed. Managed variables removed
+from `env` are removed from Convex on the next deployment.
 
 ## Change detection and lifecycle
 
@@ -192,9 +197,10 @@ before they are added.
 ## What “custom runtime” means here
 
 `Project` uses Alchemy's `Platform` API with a Convex-specific
-`BaseRuntimeContext`. At plan time it captures Alchemy Outputs and bindings as
-Convex environment variables. Its provider then gives the source tree to the
-Convex CLI, which packages functions for Convex's managed runtime.
+`BaseRuntimeContext`. Alchemy resolves Outputs nested in its props, including
+Convex environment variables, before reconciliation. Its provider then gives
+the source tree to the Convex CLI, which packages functions for Convex's
+managed runtime.
 
 It does not translate arbitrary Effect HTTP handlers into Convex queries,
 mutations, or actions. That deeper runtime needs a stable function manifest or
