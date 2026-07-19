@@ -58,7 +58,7 @@ const options: Array<{
   {
     value: "oauth",
     label: "OAuth",
-    hint: "browser-based Convex team or project authorization",
+    hint: "browser-based Convex team authorization",
   },
   {
     value: "stored",
@@ -68,7 +68,7 @@ const options: Array<{
 ];
 
 /** Registers Convex access-token and OAuth authentication with `alchemy login`. */
-export const ConvexAuth = (oauthOptions: OAuthClient.ConvexOAuthOptions = {}) =>
+export const ConvexAuth = () =>
   AuthProviderLayer<ConvexAuthConfig, ConvexResolvedCredentials>()(
     CONVEX_AUTH_PROVIDER_NAME,
     Effect.gen(function* () {
@@ -76,7 +76,7 @@ export const ConvexAuth = (oauthOptions: OAuthClient.ConvexOAuthOptions = {}) =>
 
       const oauthLogin = (profileName: string) =>
         Effect.gen(function* () {
-          const authorization = yield* OAuthClient.authorize(oauthOptions);
+          const authorization = yield* OAuthClient.authorize();
           yield* Clank.info("Convex: opening browser for OAuth login...");
           yield* Clank.info(authorization.url);
           yield* Clank.openUrl(authorization.url).pipe(

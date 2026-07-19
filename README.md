@@ -52,31 +52,9 @@ Create team access tokens from the Convex Team Settings access-token page. A
 token remains constrained by the permissions of the member who created it, so
 a dedicated service account is recommended for automation.
 
-OAuth requires a Convex OAuth application. Register a localhost redirect URI
-of `http://localhost:9977/auth/callback`, then provide the application
-credentials only to the login process:
-
-```sh
-CONVEX_OAUTH_CLIENT_ID='...' \
-CONVEX_OAUTH_CLIENT_SECRET='...' \
-bun alchemy login --configure
-```
-
-OAuth uses the team authorization flow by default. To request a project-scoped
-token or use another registered localhost redirect URI:
-
-```ts
-providers: Convex.providers({
-  oauth: {
-    scope: "project",
-    redirectUri: "http://localhost:9980/auth/callback",
-  },
-}),
-```
-
-Register that exact redirect URI in the Convex application first. `clientId`
-and `clientSecret` can also be supplied through the `oauth` object, but
-environment variables avoid putting the application secret in source code.
+OAuth uses the provider's registered Convex application and the localhost
+redirect URI `http://localhost:9976/auth/callback`; no client credential setup
+is required. The MVP always requests a team-scoped application token.
 
 `CONVEX_DEPLOY_KEY` is intentionally not an Auth Provider credential. During a
 reconciliation, `ConvexManagementApi` asks Convex for a deploy-key view of the
@@ -137,10 +115,9 @@ yield* Convex.Project("ExistingBackend", {
 });
 ```
 
-Project-scoped OAuth tokens automatically adopt their authorized project. The
-provider ensures that the project has a default production deployment and uses
-that deployment as the internal CLI target. Deployments are not exposed as
-independently managed resources in this MVP.
+The provider ensures that the project has a default production deployment and
+uses that deployment as the internal CLI target. Deployments are not exposed
+as independently managed resources in this MVP.
 
 The authenticated token must be allowed to access the project. `projectDir`
 must contain the project's `package.json`; the runtime invokes that project's

@@ -9,7 +9,6 @@ import {
   ConvexManagementApiLive,
   type ConvexManagementApiOptions,
 } from "./ManagementApi.js";
-import type { ConvexOAuthOptions } from "./OAuthClient.js";
 import { ConvexCli, ConvexCliLive, type ConvexCliOptions } from "./Runtime.js";
 
 export class Providers extends Provider.ProviderCollection<Providers>()(
@@ -22,9 +21,7 @@ const providerCollection = () =>
   );
 
 export interface ConvexProviderOptions
-  extends ConvexCliOptions, ConvexManagementApiOptions {
-  readonly oauth?: ConvexOAuthOptions;
-}
+  extends ConvexCliOptions, ConvexManagementApiOptions {}
 
 /** Register Convex resources using the local CLI and Management API. */
 export const providers = (options: ConvexProviderOptions = {}) => {
@@ -36,7 +33,7 @@ export const providers = (options: ConvexProviderOptions = {}) => {
     Layer.provide(management),
     Layer.provide(ConvexCliLive(options)),
     Layer.provideMerge(credentials),
-    Layer.provideMerge(ConvexAuth(options.oauth)),
+    Layer.provideMerge(ConvexAuth()),
     Layer.provideMerge(ProfileLive),
     Layer.provideMerge(CredentialsStoreLive),
     Layer.orDie,

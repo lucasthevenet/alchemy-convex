@@ -1,30 +1,21 @@
 import { AUTH_ERROR_URL, AUTH_SUCCESS_URL } from "alchemy/Auth";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
-import * as Redacted from "effect/Redacted";
 import crypto from "node:crypto";
 import http from "node:http";
 
-export const CONVEX_OAUTH_CLIENT_ID_ENV_NAME = "CONVEX_OAUTH_CLIENT_ID";
-export const CONVEX_OAUTH_CLIENT_SECRET_ENV_NAME = "CONVEX_OAUTH_CLIENT_SECRET";
-export const DEFAULT_OAUTH_REDIRECT_URI = "http://localhost:9977/auth/callback";
-
-export interface ConvexOAuthOptions {
-  /** Convex OAuth application ID. Falls back to CONVEX_OAUTH_CLIENT_ID. */
-  readonly clientId?: string;
-  /** Convex OAuth application secret. Falls back to CONVEX_OAUTH_CLIENT_SECRET. */
-  readonly clientSecret?: string | Redacted.Redacted<string>;
-  readonly redirectUri?: string;
-  /** Team scope can address all projects selected by the authorizing user. */
-  readonly scope?: "team" | "project";
-}
-
-interface ResolvedOAuthOptions {
-  readonly clientId: string;
-  readonly clientSecret: string;
-  readonly redirectUri: string;
-  readonly scope: "team" | "project";
-}
+/**
+ * Registered Convex OAuth application credentials.
+ *
+ * Convex requires the client secret when exchanging an authorization code.
+ * A distributed CLI cannot keep that value private, so it ships with the
+ * provider in the same way as Alchemy's PlanetScale OAuth client. PKCE still
+ * protects intercepted authorization codes. Rotate these credentials by
+ * registering a new application secret and publishing a new release.
+ */
+export const OAUTH_CLIENT_ID = "abee2524fbd24f70";
+export const OAUTH_CLIENT_SECRET = "a87d14bda3004142a70d9868e87ca0a1";
+export const OAUTH_REDIRECT_URI = "http://localhost:9976/auth/callback";
 
 export interface OAuthCredentials {
   readonly type: "oauth";
@@ -35,7 +26,6 @@ export interface Authorization {
   readonly url: string;
   readonly state: string;
   readonly codeVerifier: string;
-  readonly options: ResolvedOAuthOptions;
 }
 
 export class OAuthError extends Data.TaggedError("OAuthError")<{
@@ -43,59 +33,25 @@ export class OAuthError extends Data.TaggedError("OAuthError")<{
   readonly errorDescription: string;
 }> {}
 
-const resolveOptions = (
-  options: ConvexOAuthOptions,
-): Effect.Effect<ResolvedOAuthOptions, OAuthError> => {
-  const clientId =
-    options.clientId ?? process.env[CONVEX_OAUTH_CLIENT_ID_ENV_NAME];
-  const configuredSecret =
-    options.clientSecret ?? process.env[CONVEX_OAUTH_CLIENT_SECRET_ENV_NAME];
-  const clientSecret = Redacted.isRedacted(configuredSecret)
-    ? Redacted.value(configuredSecret)
-    : configuredSecret;
-
-  if (!clientId || !clientSecret) {
-    return Effect.fail(
-      new OAuthError({
-        error: "oauth_not_configured",
-        errorDescription: `Configure a Convex OAuth application with providers({ oauth: { clientId, clientSecret } }) or set ${CONVEX_OAUTH_CLIENT_ID_ENV_NAME} and ${CONVEX_OAUTH_CLIENT_SECRET_ENV_NAME}.`,
-      }),
-    );
-  }
-
-  return Effect.succeed({
-    clientId,
-    clientSecret,
-    redirectUri: options.redirectUri ?? DEFAULT_OAUTH_REDIRECT_URI,
-    scope: options.scope ?? "team",
-  });
-};
-
 const randomValue = (): string => crypto.randomBytes(32).toString("base64url");
 
 const codeChallenge = (verifier: string): string =>
   crypto.createHash("sha256").update(verifier).digest("base64url");
 
-/** Create a Convex authorization URL using state and PKCE S256. */
-export const authorize = (
-  oauthOptions: ConvexOAuthOptions = {},
-): Effect.Effect<Authorization, OAuthError> =>
-  resolveOptions(oauthOptions).pipe(
-    Effect.map((options) => {
-      const state = randomValue();
-      const codeVerifier = randomValue();
-      const url = new URL(
-        `https://dashboard.convex.dev/oauth/authorize/${options.scope}`,
-      );
-      url.searchParams.set("client_id", options.clientId);
-      url.searchParams.set("redirect_uri", options.redirectUri);
-      url.searchParams.set("response_type", "code");
-      url.searchParams.set("state", state);
-      url.searchParams.set("code_challenge", codeChallenge(codeVerifier));
-      url.searchParams.set("code_challenge_method", "S256");
-      return { url: url.toString(), state, codeVerifier, options };
-    }),
-  );
+/** Create a team-scoped Convex authorization URL using state and PKCE S256. */
+export const authorize = (): Effect.Effect<Authorization, OAuthError> =>
+  Effect.sync(() => {
+    const state = randomValue();
+    const codeVerifier = randomValue();
+    const url = new URL("https://dashboard.convex.dev/oauth/authorize/team");
+    url.searchParams.set("client_id", OAUTH_CLIENT_ID);
+    url.searchParams.set("redirect_uri", OAUTH_REDIRECT_URI);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("state", state);
+    url.searchParams.set("code_challenge", codeChallenge(codeVerifier));
+    url.searchParams.set("code_challenge_method", "S256");
+    return { url: url.toString(), state, codeVerifier };
+  });
 
 /** Exchange a single-use authorization code for a Convex application token. */
 export const exchange = (
@@ -104,10 +60,10 @@ export const exchange = (
 ): Effect.Effect<OAuthCredentials, OAuthError> =>
   Effect.gen(function* () {
     const body = new URLSearchParams({
-      client_id: authorization.options.clientId,
-      client_secret: authorization.options.clientSecret,
+      client_id: OAUTH_CLIENT_ID,
+      client_secret: OAUTH_CLIENT_SECRET,
       grant_type: "authorization_code",
-      redirect_uri: authorization.options.redirectUri,
+      redirect_uri: OAUTH_REDIRECT_URI,
       code,
       code_verifier: authorization.codeVerifier,
     });
@@ -169,16 +125,7 @@ export const callback = (
 const callbackPromise = (
   authorization: Authorization,
 ): Promise<OAuthCredentials> => {
-  const redirect = new URL(authorization.options.redirectUri);
-  if (redirect.hostname !== "localhost" && redirect.hostname !== "127.0.0.1") {
-    return Promise.reject(
-      new OAuthError({
-        error: "invalid_redirect_uri",
-        errorDescription:
-          "Interactive Alchemy login requires a localhost Convex OAuth redirect URI.",
-      }),
-    );
-  }
+  const redirect = new URL(OAUTH_REDIRECT_URI);
 
   return new Promise((resolvePromise, reject) => {
     const server = http.createServer(async (request, response) => {
