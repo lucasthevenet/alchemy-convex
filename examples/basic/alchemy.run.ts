@@ -1,6 +1,6 @@
 import * as Alchemy from "alchemy";
 import * as Effect from "effect/Effect";
-import * as Convex from "../src/index.js";
+import * as Convex from "alchemy-convex";
 
 export default Alchemy.Stack(
   "ConvexExample",
@@ -10,12 +10,12 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* () {
     const project = yield* Convex.Project("Backend", {
-      dir: "./examples/convex-app",
+      dir: "./examples/basic/convex-app",
     });
 
     const deployment = yield* Convex.Deployment("BackendDeployment", {
       project,
-      reference: "preview/lucas"
+      reference: "preview/lucas",
     });
 
     return {

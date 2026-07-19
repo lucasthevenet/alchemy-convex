@@ -261,7 +261,7 @@ export const DeploymentProvider = () =>
 
           for (const line of `${result.stdout}\n${result.stderr}`
             .split("\n")
-            .map((line) => line.trim())
+            .map((outputLine) => outputLine.trim())
             .filter(Boolean)) {
             yield* session.note(line);
           }

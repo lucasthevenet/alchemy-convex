@@ -24,10 +24,7 @@ const providerCollection = () =>
       Project as unknown as ResourceClassLike<Project>,
       Deployment,
     ]),
-  ).pipe(
-    Layer.provide(ProjectProvider()),
-    Layer.provide(DeploymentProvider()),
-  );
+  ).pipe(Layer.provide(ProjectProvider()), Layer.provide(DeploymentProvider()));
 
 export interface ConvexProviderOptions
   extends ConvexCliOptions, ConvexManagementApiOptions {}

@@ -92,12 +92,14 @@ export const ProjectProvider = () =>
             ? attributes
             : Unowned(attributes);
         }),
-        diff: Effect.fn(function* ({ olds, news, output }) {
-          if (!output || !isResolved(news)) return undefined;
-          return havePropsChanged(olds, news)
-            ? ({ action: "update" } as const)
-            : ({ action: "noop" } as const);
-        }),
+        diff: ({ olds, news, output }) =>
+          Effect.succeed(
+            !output || !isResolved(news)
+              ? undefined
+              : havePropsChanged(olds, news)
+                ? ({ action: "update" } as const)
+                : ({ action: "noop" } as const),
+          ),
         reconcile: Effect.fn(function* ({ id, news, output, session }) {
           const name = yield* projectName(id, news?.name, output?.name);
           const project = yield* management.ensureProject({

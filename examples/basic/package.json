@@ -1,0 +1,19 @@
+{
+  "name": "@alchemy-convex/example-basic",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.0.0-beta.99",
+    "alchemy": "2.0.0-beta.63",
+    "alchemy-convex": "workspace:*",
+    "convex": "1.42.3",
+    "effect": "4.0.0-beta.99"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2"
+  }
+}

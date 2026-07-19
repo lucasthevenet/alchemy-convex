@@ -1,0 +1,55 @@
+{
+  "name": "alchemy-convex",
+  "version": "0.0.1",
+  "description": "Effect-native Convex project resources for Alchemy v2",
+  "keywords": [
+    "alchemy",
+    "convex",
+    "effect",
+    "infrastructure-as-code"
+  ],
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./Runtime": {
+      "types": "./dist/Runtime.d.ts",
+      "import": "./dist/Runtime.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "bun run check && bun run test && bun run build"
+  },
+  "dependencies": {
+    "fast-glob": "^3.3.3"
+  },
+  "devDependencies": {
+    "@effect/platform-bun": "4.0.0-beta.99",
+    "@effect/platform-node": "4.0.0-beta.99",
+    "@effect/vitest": "4.0.0-beta.99",
+    "@types/node": "^24.0.0",
+    "alchemy": "2.0.0-beta.63",
+    "convex": "1.42.3",
+    "effect": "4.0.0-beta.99",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "alchemy": ">=2.0.0-beta.63 <3",
+    "convex": ">=1.42.3 <2",
+    "effect": ">=4.0.0-beta.97 <5"
+  }
+}

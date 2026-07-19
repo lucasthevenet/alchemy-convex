@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "alchemy-convex": ["../../packages/alchemy-convex/src/index.ts"]
+    }
+  },
+  "include": ["alchemy.run.ts", "convex-app/convex/**/*.ts"]
+}

@@ -124,6 +124,37 @@ interface DeploymentResponse {
   readonly expiresAt: number | null;
 }
 
+const toProjectMetadata = (project: ProjectResponse): ProjectMetadata => ({
+  projectId: project.id,
+  name: project.name,
+  slug: project.slug,
+  teamId: project.teamId,
+  teamSlug: project.teamSlug,
+  defaultProductionDeploymentName: project.prodDeploymentName,
+});
+
+const toDeploymentMetadata = (
+  deployment: DeploymentResponse,
+): DeploymentMetadata => ({
+  deploymentId: deployment.id,
+  projectId: deployment.projectId,
+  name: deployment.name,
+  type: deployment.deploymentType,
+  reference: deployment.reference,
+  isDefault: deployment.isDefault,
+  url: deployment.deploymentUrl,
+  expiresAt: deployment.expiresAt,
+});
+
+const ignoreNotFound = <A>(
+  effect: Effect.Effect<A, ConvexManagementApiError>,
+): Effect.Effect<A | undefined, ConvexManagementApiError> =>
+  effect.pipe(
+    Effect.catchTag("ConvexManagementApiError", (error) =>
+      error.status === 404 ? Effect.succeed(undefined) : Effect.fail(error),
+    ),
+  );
+
 export interface ConvexManagementApiOptions {
   readonly apiBaseUrl?: string;
   /** Temporary access-token deploy keys expire even if cleanup cannot run. */
@@ -241,41 +272,6 @@ export const ConvexManagementApiLive = (
           | { readonly type: "teamToken"; readonly teamId: number }
           | { readonly type: "projectToken"; readonly projectId: number }
         >("get token details", accessToken, "GET", "/token_details");
-
-      const toProjectMetadata = (
-        project: ProjectResponse,
-      ): ProjectMetadata => ({
-        projectId: project.id,
-        name: project.name,
-        slug: project.slug,
-        teamId: project.teamId,
-        teamSlug: project.teamSlug,
-        defaultProductionDeploymentName: project.prodDeploymentName,
-      });
-
-      const toDeploymentMetadata = (
-        deployment: DeploymentResponse,
-      ): DeploymentMetadata => ({
-        deploymentId: deployment.id,
-        projectId: deployment.projectId,
-        name: deployment.name,
-        type: deployment.deploymentType,
-        reference: deployment.reference,
-        isDefault: deployment.isDefault,
-        url: deployment.deploymentUrl,
-        expiresAt: deployment.expiresAt,
-      });
-
-      const ignoreNotFound = <A>(
-        effect: Effect.Effect<A, ConvexManagementApiError>,
-      ): Effect.Effect<A | undefined, ConvexManagementApiError> =>
-        effect.pipe(
-          Effect.catchTag("ConvexManagementApiError", (error) =>
-            error.status === 404
-              ? Effect.succeed(undefined)
-              : Effect.fail(error),
-          ),
-        );
 
       return ConvexManagementApi.of({
         findProject: (input) =>
