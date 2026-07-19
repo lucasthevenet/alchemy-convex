@@ -1,8 +1,0 @@
-{
-  "name": "alchemy-convex-example",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "convex": "1.42.3"
-  }
-}

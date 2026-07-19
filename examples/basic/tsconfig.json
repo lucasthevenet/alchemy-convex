@@ -5,5 +5,5 @@
       "alchemy-convex": ["../../packages/alchemy-convex/src/index.ts"]
     }
   },
-  "include": ["alchemy.run.ts", "convex-app/convex/**/*.ts"]
+  "include": ["alchemy.run.ts", "convex/**/*.ts"]
 }

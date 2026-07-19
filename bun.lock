@@ -5,9 +5,6 @@
     "": {
       "name": "alchemy-convex",
       "devDependencies": {
-        "@effect/platform-bun": "4.0.0-beta.99",
-        "alchemy": "2.0.0-beta.63",
-        "effect": "4.0.0-beta.99",
         "oxfmt": "^0.59.0",
         "oxlint": "^1.74.0",
       },

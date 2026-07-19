@@ -15,13 +15,9 @@
     "lint:fix": "oxlint . --fix",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "ci": "bun run format:check && bun run lint && bun run check && bun run test && bun run build",
-    "example:plan": "bun alchemy plan examples/basic/alchemy.run.ts"
+    "ci": "bun run format:check && bun run lint && bun run check && bun run test && bun run build"
   },
   "devDependencies": {
-    "@effect/platform-bun": "4.0.0-beta.99",
-    "alchemy": "2.0.0-beta.63",
-    "effect": "4.0.0-beta.99",
     "oxfmt": "^0.59.0",
     "oxlint": "^1.74.0"
   },
