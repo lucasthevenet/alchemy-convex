@@ -1,8 +1,10 @@
 import * as Layer from "effect/Layer";
 import * as Provider from "alchemy/Provider";
+import type { ResourceClassLike } from "alchemy/Resource";
 import { CredentialsStoreLive, ProfileLive } from "alchemy/Auth";
 import { ConvexAuth } from "./AuthProvider.js";
 import { fromAuthProvider } from "./Credentials.js";
+import { Deployment, DeploymentProvider } from "./Deployment.js";
 import { Project, ProjectProvider } from "./Project.js";
 import {
   ConvexManagementApi,
@@ -16,8 +18,15 @@ export class Providers extends Provider.ProviderCollection<Providers>()(
 ) {}
 
 const providerCollection = () =>
-  Layer.effect(Providers, Provider.collection([Project])).pipe(
+  Layer.effect(
+    Providers,
+    Provider.collection([
+      Project as unknown as ResourceClassLike<Project>,
+      Deployment,
+    ]),
+  ).pipe(
     Layer.provide(ProjectProvider()),
+    Layer.provide(DeploymentProvider()),
   );
 
 export interface ConvexProviderOptions

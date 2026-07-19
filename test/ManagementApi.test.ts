@@ -29,6 +29,65 @@ const credentialsLayer = (type: "accessToken" | "oauth") =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe("ConvexManagementApi", () => {
+  it("finds an existing project without creating it", async () => {
+    const fetchMock = vi.fn(
+      async (input: string | URL | Request, _init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/token_details")) {
+          return new Response(
+            JSON.stringify({ type: "teamToken", teamId: 7 }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/teams/7/projects?")) {
+          return new Response(
+            JSON.stringify({
+              items: [{ id: 42, name: "backend", slug: "backend" }],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: 42,
+            name: "backend",
+            slug: "backend",
+            teamId: 7,
+            teamSlug: "alchemy-team",
+            prodDeploymentName: "kind-otter-123",
+          }),
+          { status: 200 },
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const layer = ConvexManagementApiLive({
+      apiBaseUrl: "https://api.example.test/v1",
+    }).pipe(Layer.provide(credentialsLayer("accessToken")));
+
+    const project = await Effect.runPromise(
+      Effect.gen(function* () {
+        const api = yield* ConvexManagementApi;
+        return yield* api.findProject({ name: "backend" });
+      }).pipe(Effect.provide(layer)),
+    );
+
+    expect(project).toEqual({
+      projectId: 42,
+      name: "backend",
+      slug: "backend",
+      teamId: 7,
+      teamSlug: "alchemy-team",
+      defaultProductionDeploymentName: "kind-otter-123",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).endsWith("/create_project"),
+      ),
+    ).toBe(false);
+  });
+
   it("creates a named project with a production deployment", async () => {
     const fetchMock = vi.fn(
       async (input: string | URL | Request, _init?: RequestInit) => {
@@ -85,7 +144,7 @@ describe("ConvexManagementApi", () => {
       slug: "my-stack-backend-production-abc",
       teamId: 7,
       teamSlug: "alchemy-team",
-      deploymentName: "generated-fox-456",
+      defaultProductionDeploymentName: "generated-fox-456",
       createdProject: true,
       createdDeployment: true,
       managedProject: true,
@@ -97,6 +156,280 @@ describe("ConvexManagementApi", () => {
       projectName: "my-stack-backend-production-abc",
       deploymentType: "prod",
     });
+  });
+
+  it("adopts the default production deployment", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify({
+            id: 99,
+            projectId: 42,
+            name: "kind-otter-123",
+            deploymentType: "prod",
+            reference: "production",
+            isDefault: true,
+            deploymentUrl: "https://kind-otter-123.convex.cloud",
+            expiresAt: null,
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const layer = ConvexManagementApiLive({
+      apiBaseUrl: "https://api.example.test/v1",
+    }).pipe(Layer.provide(credentialsLayer("accessToken")));
+
+    const deployment = await Effect.runPromise(
+      Effect.gen(function* () {
+        const api = yield* ConvexManagementApi;
+        return yield* api.ensureDeployment({
+          projectId: 42,
+          type: "prod",
+          defaultProductionDeploymentName: "kind-otter-123",
+        });
+      }).pipe(Effect.provide(layer)),
+    );
+
+    expect(deployment).toMatchObject({
+      name: "kind-otter-123",
+      type: "prod",
+      isDefault: true,
+      createdDeployment: false,
+      managedDeployment: false,
+    });
+    expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      "https://api.example.test/v1/deployments/kind-otter-123",
+    );
+  });
+
+  it("finds a referenced deployment without creating it", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify([
+            {
+              id: 100,
+              projectId: 42,
+              name: "quick-fox-456",
+              deploymentType: "preview",
+              reference: "preview/pr-123",
+              isDefault: false,
+              deploymentUrl: "https://quick-fox-456.convex.cloud",
+              expiresAt: null,
+            },
+          ]),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const layer = ConvexManagementApiLive({
+      apiBaseUrl: "https://api.example.test/v1",
+    }).pipe(Layer.provide(credentialsLayer("accessToken")));
+
+    const deployment = await Effect.runPromise(
+      Effect.gen(function* () {
+        const api = yield* ConvexManagementApi;
+        return yield* api.findDeployment({
+          projectId: 42,
+          type: "preview",
+          reference: "preview/pr-123",
+        });
+      }).pipe(Effect.provide(layer)),
+    );
+
+    expect(deployment).toMatchObject({
+      deploymentId: 100,
+      name: "quick-fox-456",
+      reference: "preview/pr-123",
+    });
+    expect(String(fetchMock.mock.calls[0]![0])).toContain(
+      "/projects/42/list_deployments?deploymentType=preview",
+    );
+  });
+
+  it("creates a referenced preview deployment", async () => {
+    const fetchMock = vi.fn(
+      async (input: string | URL | Request, _init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/list_deployments?")) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (url.endsWith("/create_deployment")) {
+          return new Response(
+            JSON.stringify({
+              id: 100,
+              projectId: 42,
+              name: "quick-fox-456",
+              deploymentType: "preview",
+              reference: "preview/my-stack-backend",
+              isDefault: false,
+              deploymentUrl: "https://quick-fox-456.convex.cloud",
+              expiresAt: 2_000_000_000_000,
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response("not found", { status: 404 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const layer = ConvexManagementApiLive({
+      apiBaseUrl: "https://api.example.test/v1",
+    }).pipe(Layer.provide(credentialsLayer("accessToken")));
+
+    const deployment = await Effect.runPromise(
+      Effect.gen(function* () {
+        const api = yield* ConvexManagementApi;
+        return yield* api.ensureDeployment({
+          projectId: 42,
+          type: "preview",
+          reference: "preview/my-stack-backend",
+          expiresAt: 2_000_000_000_000,
+        });
+      }).pipe(Effect.provide(layer)),
+    );
+
+    expect(deployment).toMatchObject({
+      name: "quick-fox-456",
+      type: "preview",
+      reference: "preview/my-stack-backend",
+      createdDeployment: true,
+      managedDeployment: true,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(
+      JSON.parse(String((fetchMock.mock.calls[1]![1] as RequestInit).body)),
+    ).toEqual({
+      type: "preview",
+      reference: "preview/my-stack-backend",
+      expiresAt: 2_000_000_000_000,
+    });
+  });
+
+  it("refuses to silently take ownership of an existing reference", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify([
+            {
+              id: 100,
+              projectId: 42,
+              name: "quick-fox-456",
+              deploymentType: "preview",
+              reference: "preview/pr-123",
+              isDefault: false,
+              deploymentUrl: "https://quick-fox-456.convex.cloud",
+              expiresAt: null,
+            },
+          ]),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const layer = ConvexManagementApiLive({
+      apiBaseUrl: "https://api.example.test/v1",
+    }).pipe(Layer.provide(credentialsLayer("accessToken")));
+
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const api = yield* ConvexManagementApi;
+          return yield* api.ensureDeployment({
+            projectId: 42,
+            type: "preview",
+            reference: "preview/pr-123",
+          });
+        }).pipe(Effect.provide(layer)),
+      ),
+    ).rejects.toMatchObject({
+      _tag: "ConvexManagementApiError",
+      operation: "ensure deployment",
+      message: expect.stringContaining("Adopt it explicitly"),
+    });
+  });
+
+  it("updates preview expiration and deletes deployments", async () => {
+    const expiresAt = 2_000_000_000_000;
+    const deployment = {
+      id: 100,
+      projectId: 42,
+      name: "quick-fox-456",
+      deploymentType: "preview",
+      reference: "preview/my-stack-backend",
+      isDefault: false,
+      deploymentUrl: "https://quick-fox-456.convex.cloud",
+      expiresAt: null,
+    } as const;
+    const fetchMock = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/delete")) {
+          return new Response(undefined, { status: 204 });
+        }
+        return new Response(
+          JSON.stringify(
+            init?.method === "PATCH"
+              ? { ...deployment, expiresAt }
+              : deployment,
+          ),
+          { status: 200 },
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const layer = ConvexManagementApiLive({
+      apiBaseUrl: "https://api.example.test/v1",
+    }).pipe(Layer.provide(credentialsLayer("accessToken")));
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const api = yield* ConvexManagementApi;
+        const ensured = yield* api.ensureDeployment({
+          projectId: 42,
+          name: "quick-fox-456",
+          type: "preview",
+          expiresAt,
+        });
+        expect(ensured.expiresAt).toBe(expiresAt);
+        yield* api.deleteDeployment(ensured.name);
+      }).pipe(Effect.provide(layer)),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[1]![1]).toMatchObject({ method: "PATCH" });
+    expect(
+      JSON.parse(String((fetchMock.mock.calls[1]![1] as RequestInit).body)),
+    ).toEqual({ expiresAt });
+    expect(String(fetchMock.mock.calls[2]![0])).toBe(
+      "https://api.example.test/v1/deployments/quick-fox-456/delete",
+    );
+  });
+
+  it("deletes projects and treats missing resources as already deleted", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response("not found", { status: 404 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const layer = ConvexManagementApiLive({
+      apiBaseUrl: "https://api.example.test/v1",
+    }).pipe(Layer.provide(credentialsLayer("accessToken")));
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const api = yield* ConvexManagementApi;
+        yield* api.deleteDeployment("missing-deployment");
+        yield* api.deleteProject(42);
+      }).pipe(Effect.provide(layer)),
+    );
+
+    expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      "https://api.example.test/v1/deployments/missing-deployment/delete",
+    );
+    expect(String(fetchMock.mock.calls[1]![0])).toBe(
+      "https://api.example.test/v1/projects/42/delete",
+    );
   });
 
   it("leases and revokes an expiring deploy key for a team access token", async () => {

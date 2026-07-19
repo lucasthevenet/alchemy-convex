@@ -27,10 +27,6 @@ export interface ConvexDeployRequest {
   readonly typecheck: "enable" | "try" | "disable";
   readonly codegen: boolean;
   readonly message?: string;
-  readonly preview?: {
-    readonly name: string;
-    readonly recreate?: boolean;
-  };
 }
 
 export interface ConvexDeployResult {
@@ -83,11 +79,8 @@ const serializeEnvironment = (environment: ConvexEnvironment): string =>
     .map(([key, value]) => `${key}=${JSON.stringify(plainValue(value))}`)
     .join("\n");
 
-const deploymentTypeFromKey = (
-  deployKey: string,
-  preview: ConvexDeployRequest["preview"],
-): ConvexDeploymentType => {
-  if (preview || deployKey.startsWith("preview:")) return "preview";
+const deploymentTypeFromKey = (deployKey: string): ConvexDeploymentType => {
+  if (deployKey.startsWith("preview:")) return "preview";
   if (deployKey.startsWith("prod:")) return "prod";
   if (deployKey.startsWith("dev:")) return "dev";
   return "unknown";
@@ -98,6 +91,9 @@ const deploymentNameFromKey = (deployKey: string): string | undefined => {
   if (identity.startsWith("prod:") || identity.startsWith("dev:")) {
     return identity.slice(identity.indexOf(":") + 1);
   }
+  if (identity.startsWith("preview:") && identity.split(":").length === 2) {
+    return identity.slice("preview:".length);
+  }
   if (!identity.includes(":")) return identity;
   return undefined;
 };
@@ -107,7 +103,6 @@ const urlPattern = /https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)?\.convex\.cloud\b/gi;
 export const deploymentMetadata = (
   deployKey: string,
   output: string,
-  preview?: ConvexDeployRequest["preview"],
 ): Omit<ConvexDeployResult, "stdout" | "stderr"> => {
   const urls = output.match(urlPattern);
   const nameFromKey = deploymentNameFromKey(deployKey);
@@ -127,7 +122,7 @@ export const deploymentMetadata = (
 
   return {
     deploymentName,
-    deploymentType: deploymentTypeFromKey(deployKey, preview),
+    deploymentType: deploymentTypeFromKey(deployKey),
     url,
     httpActionsUrl: url.replace(/\.convex\.cloud$/, ".convex.site"),
   };
@@ -233,19 +228,12 @@ export const ConvexCliLive = (options: ConvexCliOptions = {}) =>
         const invalidKey = desiredKeys.find(
           (key) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key),
         );
-        const validationError =
-          request.preview && desiredKeys.length > 0
-            ? new ConvexCliError({
-                operation: "env set",
-                message:
-                  "Managed environment variables are not supported for preview deploy keys in this MVP. Convex must claim the preview before its environment can be addressed.",
-              })
-            : invalidKey
-              ? new ConvexCliError({
-                  operation: "env set",
-                  message: `Invalid Convex environment variable name: ${JSON.stringify(invalidKey)}`,
-                })
-              : undefined;
+        const validationError = invalidKey
+          ? new ConvexCliError({
+              operation: "env set",
+              message: `Invalid Convex environment variable name: ${JSON.stringify(invalidKey)}`,
+            })
+          : undefined;
         const validateEnvironment = validationError
           ? Effect.fail(validationError)
           : Effect.void;
@@ -307,13 +295,6 @@ export const ConvexCliLive = (options: ConvexCliOptions = {}) =>
           request.codegen ? "enable" : "disable",
         ];
         if (request.message) deployArgs.push("--message", request.message);
-        if (request.preview) {
-          deployArgs.push(
-            request.preview.recreate ? "--preview-create" : "--preview-name",
-            request.preview.name,
-          );
-        }
-
         return validateEnvironment.pipe(
           Effect.andThen(removeOldEnvironment),
           Effect.andThen(setEnvironment),
@@ -324,7 +305,6 @@ export const ConvexCliLive = (options: ConvexCliOptions = {}) =>
                 ...deploymentMetadata(
                   deployKey,
                   `${result.stdout}\n${result.stderr}`,
-                  request.preview,
                 ),
                 stdout: result.stdout,
                 stderr: result.stderr,

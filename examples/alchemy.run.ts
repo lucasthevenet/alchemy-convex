@@ -9,16 +9,20 @@ export default Alchemy.Stack(
     state: Alchemy.localState(),
   },
   Effect.gen(function* () {
-    const backend = yield* Convex.Project("Backend", {
-      projectDir: "./examples/convex-app",
+    const project = yield* Convex.Project("Backend", {
+      dir: "./examples/convex-app",
+    });
+
+    const deployment = yield* Convex.Deployment("BackendDeployment", {
+      project,
       env: {
         APP_ENV: "production",
       },
     });
 
     return {
-      convexUrl: backend.url,
-      convexHttpActionsUrl: backend.httpActionsUrl,
+      convexUrl: deployment.url,
+      convexHttpActionsUrl: deployment.httpActionsUrl,
     };
   }),
 );

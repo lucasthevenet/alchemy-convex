@@ -19,8 +19,22 @@ export interface LeaseDeploymentKeyInput {
 
 export interface EnsureProjectInput {
   readonly projectId?: number;
-  readonly teamId?: number;
+  /** Internal ownership state retained across reconciliations. */
+  readonly managedProject?: boolean;
   readonly name: string;
+}
+
+export interface FindProjectInput {
+  readonly name: string;
+}
+
+export interface ProjectMetadata {
+  readonly projectId: number;
+  readonly name: string;
+  readonly slug: string;
+  readonly teamId: number;
+  readonly teamSlug: string;
+  readonly defaultProductionDeploymentName: string | null;
 }
 
 export interface EnsuredProject {
@@ -29,10 +43,52 @@ export interface EnsuredProject {
   readonly slug: string;
   readonly teamId: number;
   readonly teamSlug: string;
-  readonly deploymentName: string;
+  readonly defaultProductionDeploymentName: string;
   readonly createdProject: boolean;
   readonly createdDeployment: boolean;
   readonly managedProject: boolean;
+}
+
+export type ManagementDeploymentType = "prod" | "dev" | "preview";
+
+export interface EnsureDeploymentInput {
+  readonly projectId: number;
+  readonly name?: string;
+  readonly type: ManagementDeploymentType;
+  readonly reference?: string;
+  readonly defaultProductionDeploymentName?: string;
+  readonly expiresAt?: number;
+}
+
+export interface FindDeploymentInput {
+  readonly projectId: number;
+  readonly type: ManagementDeploymentType;
+  readonly reference?: string;
+  readonly defaultProductionDeploymentName?: string;
+}
+
+export interface DeploymentMetadata {
+  readonly deploymentId: number;
+  readonly projectId: number;
+  readonly name: string;
+  readonly type: ManagementDeploymentType;
+  readonly reference: string;
+  readonly isDefault: boolean;
+  readonly url: string;
+  readonly expiresAt: number | null;
+}
+
+export interface EnsuredDeployment {
+  readonly deploymentId: number;
+  readonly projectId: number;
+  readonly name: string;
+  readonly type: ManagementDeploymentType;
+  readonly reference: string;
+  readonly isDefault: boolean;
+  readonly url: string;
+  readonly expiresAt: number | null;
+  readonly createdDeployment: boolean;
+  readonly managedDeployment: boolean;
 }
 
 interface ProjectResponse {
@@ -42,6 +98,17 @@ interface ProjectResponse {
   readonly teamId: number;
   readonly teamSlug: string;
   readonly prodDeploymentName: string | null;
+}
+
+interface DeploymentResponse {
+  readonly id: number;
+  readonly projectId: number;
+  readonly name: string;
+  readonly deploymentType: ManagementDeploymentType;
+  readonly reference: string;
+  readonly isDefault: boolean;
+  readonly deploymentUrl: string;
+  readonly expiresAt: number | null;
 }
 
 export interface ConvexManagementApiOptions {
@@ -62,9 +129,27 @@ export class ConvexManagementApiError extends Data.TaggedError(
 export class ConvexManagementApi extends Context.Service<
   ConvexManagementApi,
   {
+    readonly findProject: (
+      input: FindProjectInput,
+    ) => Effect.Effect<ProjectMetadata | undefined, ConvexManagementApiError>;
     readonly ensureProject: (
       input: EnsureProjectInput,
     ) => Effect.Effect<EnsuredProject, ConvexManagementApiError>;
+    readonly ensureDeployment: (
+      input: EnsureDeploymentInput,
+    ) => Effect.Effect<EnsuredDeployment, ConvexManagementApiError>;
+    readonly findDeployment: (
+      input: FindDeploymentInput,
+    ) => Effect.Effect<
+      DeploymentMetadata | undefined,
+      ConvexManagementApiError
+    >;
+    readonly deleteProject: (
+      projectId: number,
+    ) => Effect.Effect<void, ConvexManagementApiError>;
+    readonly deleteDeployment: (
+      deploymentName: string,
+    ) => Effect.Effect<void, ConvexManagementApiError>;
     readonly leaseDeploymentKey: (
       input: LeaseDeploymentKeyInput,
     ) => Effect.Effect<DeploymentKeyLease, ConvexManagementApiError>;
@@ -138,23 +223,96 @@ export const ConvexManagementApiLive = (
                 }),
         });
 
+      const getTokenDetails = (accessToken: Redacted.Redacted<string>) =>
+        request<
+          | { readonly type: "teamToken"; readonly teamId: number }
+          | { readonly type: "projectToken"; readonly projectId: number }
+        >("get token details", accessToken, "GET", "/token_details");
+
+      const toProjectMetadata = (
+        project: ProjectResponse,
+      ): ProjectMetadata => ({
+        projectId: project.id,
+        name: project.name,
+        slug: project.slug,
+        teamId: project.teamId,
+        teamSlug: project.teamSlug,
+        defaultProductionDeploymentName: project.prodDeploymentName,
+      });
+
+      const toDeploymentMetadata = (
+        deployment: DeploymentResponse,
+      ): DeploymentMetadata => ({
+        deploymentId: deployment.id,
+        projectId: deployment.projectId,
+        name: deployment.name,
+        type: deployment.deploymentType,
+        reference: deployment.reference,
+        isDefault: deployment.isDefault,
+        url: deployment.deploymentUrl,
+        expiresAt: deployment.expiresAt,
+      });
+
+      const ignoreNotFound = <A>(
+        effect: Effect.Effect<A, ConvexManagementApiError>,
+      ): Effect.Effect<A | undefined, ConvexManagementApiError> =>
+        effect.pipe(
+          Effect.catchTag("ConvexManagementApiError", (error) =>
+            error.status === 404
+              ? Effect.succeed(undefined)
+              : Effect.fail(error),
+          ),
+        );
+
       return ConvexManagementApi.of({
+        findProject: (input) =>
+          Effect.gen(function* () {
+            const resolved = yield* credentials;
+            const tokenDetails = yield* getTokenDetails(resolved.accessToken);
+            let projectId: number | undefined;
+
+            if (tokenDetails.type === "projectToken") {
+              projectId = tokenDetails.projectId;
+            } else {
+              const projects = yield* request<{
+                readonly items: Array<{
+                  readonly id: number;
+                  readonly name: string;
+                  readonly slug: string;
+                }>;
+              }>(
+                "list projects",
+                resolved.accessToken,
+                "GET",
+                `/teams/${encodeURIComponent(String(tokenDetails.teamId))}/projects?limit=100&q=${encodeURIComponent(input.name)}`,
+              );
+              projectId = projects.items.find(
+                (project) =>
+                  project.name === input.name || project.slug === input.name,
+              )?.id;
+            }
+
+            if (projectId === undefined) return undefined;
+            const project = yield* ignoreNotFound(
+              request<ProjectResponse>(
+                "get project",
+                resolved.accessToken,
+                "GET",
+                `/projects/${encodeURIComponent(String(projectId))}`,
+              ),
+            );
+            return project === undefined
+              ? undefined
+              : toProjectMetadata(project);
+          }),
         ensureProject: (input) =>
           Effect.gen(function* () {
             const resolved = yield* credentials;
-            const tokenDetails = yield* request<
-              | { readonly type: "teamToken"; readonly teamId: number }
-              | { readonly type: "projectToken"; readonly projectId: number }
-            >(
-              "get token details",
-              resolved.accessToken,
-              "GET",
-              "/token_details",
-            );
+            const tokenDetails = yield* getTokenDetails(resolved.accessToken);
 
             let projectId = input.projectId;
             let createdProject = false;
-            let managedProject = false;
+            let managedProject = input.managedProject ?? false;
             let createdDeploymentName: string | undefined;
             if (
               projectId === undefined &&
@@ -169,7 +327,7 @@ export const ConvexManagementApiLive = (
                 tokenDetails.type === "teamToken"
                   ? tokenDetails.teamId
                   : undefined;
-              const teamId = input.teamId ?? inferredTeamId;
+              const teamId = inferredTeamId;
               if (teamId === undefined) {
                 return yield* new ConvexManagementApiError({
                   operation: "ensure project",
@@ -253,11 +411,191 @@ export const ConvexManagementApiLive = (
               slug: project.slug,
               teamId: project.teamId,
               teamSlug: project.teamSlug,
-              deploymentName,
+              defaultProductionDeploymentName: deploymentName,
               createdProject,
               createdDeployment,
               managedProject,
             };
+          }),
+        findDeployment: (input) =>
+          Effect.gen(function* () {
+            const resolved = yield* credentials;
+            let deployment: DeploymentResponse | undefined;
+
+            if (
+              input.type === "prod" &&
+              input.defaultProductionDeploymentName !== undefined
+            ) {
+              deployment = yield* ignoreNotFound(
+                request<DeploymentResponse>(
+                  "get deployment",
+                  resolved.accessToken,
+                  "GET",
+                  `/deployments/${encodeURIComponent(input.defaultProductionDeploymentName)}`,
+                ),
+              );
+            } else {
+              const deployments = yield* request<DeploymentResponse[]>(
+                "list deployments",
+                resolved.accessToken,
+                "GET",
+                `/projects/${encodeURIComponent(String(input.projectId))}/list_deployments?deploymentType=${encodeURIComponent(input.type)}`,
+              );
+              deployment =
+                input.type === "prod"
+                  ? deployments.find((candidate) => candidate.isDefault)
+                  : deployments.find(
+                      (candidate) => candidate.reference === input.reference,
+                    );
+            }
+
+            if (
+              deployment === undefined ||
+              deployment.projectId !== input.projectId
+            ) {
+              return undefined;
+            }
+            return toDeploymentMetadata(deployment);
+          }),
+        ensureDeployment: (input) =>
+          Effect.gen(function* () {
+            const resolved = yield* credentials;
+            const getDeployment = (name: string) =>
+              request<DeploymentResponse>(
+                "get deployment",
+                resolved.accessToken,
+                "GET",
+                `/deployments/${encodeURIComponent(name)}`,
+              );
+
+            let deployment: DeploymentResponse;
+            let createdDeployment = false;
+            let managedDeployment = false;
+
+            if (input.name !== undefined) {
+              deployment = yield* getDeployment(input.name);
+            } else if (
+              input.type === "prod" &&
+              input.defaultProductionDeploymentName !== undefined
+            ) {
+              deployment = yield* getDeployment(
+                input.defaultProductionDeploymentName,
+              );
+            } else {
+              if (input.reference === undefined) {
+                return yield* new ConvexManagementApiError({
+                  operation: "ensure deployment",
+                  message: `A reference is required to create a ${input.type} deployment.`,
+                });
+              }
+
+              managedDeployment = true;
+
+              const deployments = yield* request<DeploymentResponse[]>(
+                "list deployments",
+                resolved.accessToken,
+                "GET",
+                `/projects/${encodeURIComponent(String(input.projectId))}/list_deployments?deploymentType=${encodeURIComponent(input.type)}`,
+              );
+              const existing = deployments.find(
+                (candidate) => candidate.reference === input.reference,
+              );
+              if (existing !== undefined) {
+                return yield* new ConvexManagementApiError({
+                  operation: "ensure deployment",
+                  message:
+                    `Convex deployment ${existing.name} already exists for reference ${input.reference}. ` +
+                    "Adopt it explicitly with --adopt or adopt().",
+                });
+              } else {
+                deployment = yield* request<DeploymentResponse>(
+                  "create deployment",
+                  resolved.accessToken,
+                  "POST",
+                  `/projects/${encodeURIComponent(String(input.projectId))}/create_deployment`,
+                  {
+                    type: input.type,
+                    reference: input.reference,
+                    ...(input.type === "dev" ? { isDefault: false } : {}),
+                    ...(input.expiresAt === undefined
+                      ? {}
+                      : { expiresAt: input.expiresAt }),
+                  },
+                );
+                createdDeployment = true;
+              }
+            }
+
+            if (deployment.projectId !== input.projectId) {
+              return yield* new ConvexManagementApiError({
+                operation: "ensure deployment",
+                message: `Convex deployment ${deployment.name} belongs to project ${deployment.projectId}, not project ${input.projectId}.`,
+              });
+            }
+            if (deployment.deploymentType !== input.type) {
+              return yield* new ConvexManagementApiError({
+                operation: "ensure deployment",
+                message: `Convex deployment ${deployment.name} has type ${deployment.deploymentType}, not ${input.type}.`,
+              });
+            }
+            if (
+              input.reference !== undefined &&
+              deployment.reference !== input.reference
+            ) {
+              return yield* new ConvexManagementApiError({
+                operation: "ensure deployment",
+                message: `Convex deployment ${deployment.name} has reference ${deployment.reference}, not ${input.reference}.`,
+              });
+            }
+            if (
+              input.expiresAt !== undefined &&
+              deployment.expiresAt !== input.expiresAt
+            ) {
+              deployment = yield* request<DeploymentResponse>(
+                "update deployment expiration",
+                resolved.accessToken,
+                "PATCH",
+                `/deployments/${encodeURIComponent(deployment.name)}`,
+                { expiresAt: input.expiresAt },
+              );
+            }
+
+            return {
+              deploymentId: deployment.id,
+              projectId: deployment.projectId,
+              name: deployment.name,
+              type: deployment.deploymentType,
+              reference: deployment.reference,
+              isDefault: deployment.isDefault,
+              url: deployment.deploymentUrl,
+              expiresAt: deployment.expiresAt,
+              createdDeployment,
+              managedDeployment,
+            };
+          }),
+        deleteProject: (projectId) =>
+          Effect.gen(function* () {
+            const resolved = yield* credentials;
+            yield* ignoreNotFound(
+              request<void>(
+                "delete project",
+                resolved.accessToken,
+                "POST",
+                `/projects/${encodeURIComponent(String(projectId))}/delete`,
+              ),
+            );
+          }),
+        deleteDeployment: (deploymentName) =>
+          Effect.gen(function* () {
+            const resolved = yield* credentials;
+            yield* ignoreNotFound(
+              request<void>(
+                "delete deployment",
+                resolved.accessToken,
+                "POST",
+                `/deployments/${encodeURIComponent(deploymentName)}/delete`,
+              ),
+            );
           }),
         leaseDeploymentKey: (input) =>
           Effect.gen(function* () {

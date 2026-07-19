@@ -23,8 +23,17 @@ describe("deploymentMetadata", () => {
       deploymentMetadata(
         "preview:team:project|secret",
         "Deployed Convex functions to https://quick-fox-456.convex.cloud",
-        { name: "feature-branch" },
       ),
+    ).toMatchObject({
+      deploymentName: "quick-fox-456",
+      deploymentType: "preview",
+      url: "https://quick-fox-456.convex.cloud",
+    });
+  });
+
+  it("derives preview metadata from a concrete deployment key", () => {
+    expect(
+      deploymentMetadata("preview:quick-fox-456|secret", "deployed"),
     ).toMatchObject({
       deploymentName: "quick-fox-456",
       deploymentType: "preview",

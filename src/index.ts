@@ -1,5 +1,6 @@
 export * from "./AuthProvider.js";
 export * from "./Credentials.js";
+export * from "./Deployment.js";
 export * from "./ManagementApi.js";
 export * from "./OAuthClient.js";
 export * from "./ProjectHash.js";

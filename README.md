@@ -5,8 +5,10 @@ standard Convex project from an Alchemy stack.
 
 The MVP contains four pieces:
 
-- `Convex.Project`, an Alchemy `Platform` resource participating in plan,
-  binding, state, and provider lifecycles.
+- `Convex.Project`, an Alchemy resource that creates or adopts a Convex
+  project.
+- `Convex.Deployment`, an Alchemy `Platform` that deploys a project directory
+  to a production, development, or preview reference.
 - `ConvexCli`, a replaceable Effect service that reconciles environment
   variables and invokes the project's local Convex CLI.
 - `ConvexAuth`, an Alchemy Auth Provider supporting a Convex team access token
@@ -79,8 +81,10 @@ export default Alchemy.Stack(
     state: Alchemy.localState(),
   },
   Effect.gen(function* () {
-    const backend = yield* Convex.Project("Backend", {
-      projectDir: ".",
+    const project = yield* Convex.Project("Backend");
+
+    const backend = yield* Convex.Deployment("BackendDeployment", {
+      project,
       env: {
         APP_ENV: "production",
       },
@@ -100,29 +104,36 @@ Run the stack normally:
 bun alchemy deploy
 ```
 
-`name` is optional. When both `name` and `projectId` are omitted, the provider
-derives a stable project name from the Alchemy stack, stage, and resource ID.
-With a team-scoped token it resolves that name in the authorized team and
-creates the project when none exists. `teamId` can override the team inferred
-from the token.
+`Project.name` and `Project.dir` are optional. When `name` is omitted, the
+provider derives a stable name from the Alchemy stack, stage, and resource ID.
+`dir` defaults to `"."`, the stack's working directory. With a team-scoped
+token the provider resolves the name in the authorized team and creates the
+project when none exists. If that name already belongs to a project outside
+the stack, Alchemy requires explicit adoption with `--adopt` or `adopt()`.
 
-To adopt an existing project, provide its numeric project ID:
+`Deployment.reference` selects the deployment and defaults to `"production"`.
+Development and preview references carry their deployment type in the
+reference itself:
 
 ```ts
-yield* Convex.Project("ExistingBackend", {
-  projectId: 42,
-  projectDir: ".",
+const preview = yield* Convex.Deployment("PullRequest", {
+  project,
+  reference: "preview/pr-123",
+  expiresAt: "2030-01-01T00:00:00Z",
 });
 ```
 
-The provider ensures that the project has a default production deployment and
-uses that deployment as the internal CLI target. Deployments are not exposed
-as independently managed resources in this MVP.
+Supported references are `"production"`, `"dev/<name>"`, and
+`"preview/<name>"`. The stable reference is desired configuration; Convex's
+generated deployment name is exposed as `deployment.name`.
+An existing development or preview reference also requires explicit adoption;
+the default production deployment is attached automatically because Convex
+creates it with the parent project.
 
-The authenticated token must be allowed to access the project. `projectDir`
-must contain the project's `package.json`; the runtime invokes that project's
-installed Convex CLI, so no global CLI is required. Override the executable with
-`Convex.providers({ binary: "/path/to/convex" })`.
+The authenticated token must be allowed to access the project. `Project.dir`
+must contain the project's `package.json`; each child deployment invokes that
+project's installed Convex CLI, so no global CLI is required. Override the
+executable with `Convex.providers({ binary: "/path/to/convex" })`.
 
 ## Use resource outputs as environment variables
 
@@ -134,8 +145,12 @@ const web = yield* Cloudflare.Worker("Web", {
   main: "./src/worker.ts",
 });
 
-const backend = yield* Convex.Project("Backend", {
-  projectDir: "./apps/backend",
+const project = yield* Convex.Project("Backend", {
+  dir: "./apps/backend",
+});
+
+const backend = yield* Convex.Deployment("BackendDeployment", {
+  project,
   env: {
     APP_ENV: "production",
     SITE_URL: web.url,
@@ -155,25 +170,54 @@ Alchemy state, and `convex/_generated` by default. Monorepos can customize hash
 inputs:
 
 ```ts
-yield* Convex.Project("Backend", {
-  projectDir: ".",
+const project = yield* Convex.Project("Backend", {
+  dir: "./apps/backend",
   source: {
     include: ["convex/**", "packages/domain/**", "package.json", "bun.lock"],
     exclude: ["packages/domain/test/**"],
   },
 });
+
+yield* Convex.Deployment("BackendDeployment", { project });
 ```
 
-`alwaysDeploy: true` disables memoization.
+`Deployment.alwaysDeploy: true` disables memoization.
 
-Destroying the Alchemy resource does not delete the Convex project, its
-deployments, functions, or data. Destructive project ownership and independently
-managed dev, preview, or custom deployments need explicit lifecycle semantics
-before they are added.
+Both resources use Alchemy's normal removal policy. Destroying a
+`Convex.Deployment` deletes that deployment, including its data and files.
+Destroying a `Convex.Project` deletes the project and cascades to every
+deployment in it. Dependencies are destroyed first, so a stack containing both
+resources deletes the deployment before its parent project.
+
+Use Alchemy's `retain()` when remote data should survive stack removal:
+
+```ts
+import { retain } from "alchemy/RemovalPolicy";
+
+const project = yield* Convex.Project("Backend", {
+  dir: "./apps/backend",
+}).pipe(retain());
+
+const deployment = yield* Convex.Deployment("BackendDeployment", {
+  project,
+}).pipe(retain());
+```
+
+Adopt an existing named project explicitly when you intend the stack to own
+and eventually delete it:
+
+```ts
+import { adopt } from "alchemy/AdoptPolicy";
+
+const project = yield* Convex.Project("Backend", {
+  name: "existing-project",
+  dir: "./apps/backend",
+}).pipe(adopt());
+```
 
 ## What “custom runtime” means here
 
-`Project` uses Alchemy's `Platform` API with a Convex-specific
+`Deployment` uses Alchemy's `Platform` API with a Convex-specific
 `BaseRuntimeContext`. Alchemy resolves Outputs nested in its props, including
 Convex environment variables, before reconciliation. Its provider then gives
 the source tree to the Convex CLI, which packages functions for Convex's
