@@ -17,7 +17,7 @@ export default Alchemy.Stack(
     const deployment = yield* Convex.Deployment("BackendDeployment", {
       project,
       reference: "preview/lucas",
-    }).pipe(adopt())
+    }).pipe(adopt());
 
     return {
       convexUrl: deployment.url,
