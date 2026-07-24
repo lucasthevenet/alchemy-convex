@@ -131,7 +131,7 @@ const referencedPreviewProgram = (shouldAdopt: boolean) =>
   Effect.gen(function* () {
     const project = yield* Project("Backend", {
       name: "backend-project",
-      dir: "test/fixtures/project",
+      rootDir: "test/fixtures/project",
     });
     const deployment = Deployment("Preview", {
       project,
@@ -167,7 +167,7 @@ test.provider(
       };
       const props = {
         name: "existing-backend",
-        dir: "test/fixtures/project",
+        rootDir: "test/fixtures/project",
       } as const;
 
       const rejected = yield* Effect.exit(
@@ -188,7 +188,7 @@ test.provider(
   (stack) =>
     Effect.gen(function* () {
       const project = yield* stack.deploy(Project("DefaultDirectory"));
-      expect(project.dir).toBe(".");
+      expect(project.rootDir).toBe(".");
       expect(calls).toHaveLength(0);
     }),
 );
@@ -200,7 +200,7 @@ test.provider(
       yield* stack.deploy(
         Project("Backend", {
           name: "backend-project",
-          dir: "test/fixtures/project",
+          rootDir: "test/fixtures/project",
         }),
       );
       existingDeployment = {
@@ -237,7 +237,7 @@ test.provider(
         const web = { url: Output.literal("https://web.example.com") };
         const project = yield* Project("Backend", {
           name: "backend-project",
-          dir: "test/fixtures/project",
+          rootDir: "test/fixtures/project",
         });
         return yield* Deployment("BackendDeployment", {
           project,
@@ -275,7 +275,7 @@ test.provider(
     Effect.gen(function* () {
       const program = Effect.gen(function* () {
         const project = yield* Project("GeneratedBackend", {
-          dir: "test/fixtures/project",
+          rootDir: "test/fixtures/project",
         });
         return yield* Deployment("GeneratedDeployment", { project });
       });
@@ -297,7 +297,7 @@ test.provider("infers development and preview kinds from references", (stack) =>
       Effect.gen(function* () {
         const project = yield* Project("Backend", {
           name: "backend-project",
-          dir: "test/fixtures/project",
+          rootDir: "test/fixtures/project",
         });
         return yield* Deployment("AgentDeployment", {
           project,
@@ -317,7 +317,7 @@ test.provider("infers development and preview kinds from references", (stack) =>
       Effect.gen(function* () {
         const project = yield* Project("Backend", {
           name: "backend-project",
-          dir: "test/fixtures/project",
+          rootDir: "test/fixtures/project",
         });
         return yield* Deployment("AgentDeployment", {
           project,
@@ -336,7 +336,7 @@ test.provider("destroys deployments before their parent project", (stack) =>
     yield* stack.deploy(
       Effect.gen(function* () {
         const project = yield* Project("Backend", {
-          dir: "test/fixtures/project",
+          rootDir: "test/fixtures/project",
         });
         return yield* Deployment("BackendDeployment", { project });
       }),
@@ -352,7 +352,7 @@ test.provider("supports retaining projects and deployments", (stack) =>
     yield* stack.deploy(
       Effect.gen(function* () {
         const project = yield* Project("Backend", {
-          dir: "test/fixtures/project",
+          rootDir: "test/fixtures/project",
         }).pipe(retain());
         return yield* Deployment("BackendDeployment", { project }).pipe(
           retain(),

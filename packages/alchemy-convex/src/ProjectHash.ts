@@ -6,7 +6,7 @@ import * as Effect from "effect/Effect";
 import fg from "fast-glob";
 
 export interface ProjectHashOptions {
-  /** Glob patterns to hash, relative to `projectDir`. */
+  /** Glob patterns to hash, relative to the project's `rootDir`. */
   readonly include?: readonly string[];
   /** Additional glob patterns to exclude from the hash. */
   readonly exclude?: readonly string[];

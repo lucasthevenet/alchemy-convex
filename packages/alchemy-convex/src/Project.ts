@@ -19,10 +19,10 @@ export interface ProjectProps {
   /** Project name. Generated from the Alchemy resource ID when omitted. */
   readonly name?: string;
   /**
-   * Directory containing package.json and the Convex project configuration.
+   * Root directory containing package.json and the Convex project configuration.
    * Defaults to the stack's working directory (`"."`).
    */
-  readonly dir?: string;
+  readonly rootDir?: string;
   /** Source hash customization consumed by child deployments. */
   readonly source?: ProjectHashOptions;
 }
@@ -34,7 +34,7 @@ export interface ProjectAttributes {
   readonly teamId: number;
   readonly teamSlug: string;
   readonly defaultProductionDeploymentName: string;
-  readonly dir: string;
+  readonly rootDir: string;
   readonly source: ProjectHashOptions | undefined;
 }
 
@@ -69,7 +69,7 @@ export const ProjectProvider = () =>
       const management = yield* ConvexManagementApi;
 
       return Project.Provider.of({
-        version: 4,
+        version: 5,
         nuke: { skip: true },
         list: () => Effect.succeed([]),
         read: Effect.fn(function* ({ id, olds, output }) {
@@ -85,7 +85,7 @@ export const ProjectProvider = () =>
             teamSlug: project.teamSlug,
             defaultProductionDeploymentName:
               project.defaultProductionDeploymentName ?? "",
-            dir: olds?.dir ?? output?.dir ?? ".",
+            rootDir: olds?.rootDir ?? output?.rootDir ?? ".",
             source: olds?.source,
           };
           return output?.projectId === project.projectId
@@ -126,7 +126,7 @@ export const ProjectProvider = () =>
             teamSlug: project.teamSlug,
             defaultProductionDeploymentName:
               project.defaultProductionDeploymentName,
-            dir: news?.dir ?? ".",
+            rootDir: news?.rootDir ?? ".",
             source: news?.source,
           };
         }),

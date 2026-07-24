@@ -1,6 +1,6 @@
 # alchemy-convex
 
-`alchemy-convex` is an experimental Alchemy v2 provider for deploying a
+`alchemy-convex` is an Alchemy v2 provider for deploying a
 standard Convex project from an Alchemy stack.
 
 The MVP contains five pieces:
@@ -104,9 +104,9 @@ Run the stack normally:
 bun alchemy deploy
 ```
 
-`Project.name` and `Project.dir` are optional. When `name` is omitted, the
+`Project.name` and `Project.rootDir` are optional. When `name` is omitted, the
 provider derives a stable name from the Alchemy stack, stage, and resource ID.
-`dir` defaults to `"."`, the stack's working directory. With a team-scoped
+`rootDir` defaults to `"."`, the stack's working directory. With a team-scoped
 token the provider resolves the name in the authorized team and creates the
 project when none exists. If that name already belongs to a project outside
 the stack, Alchemy requires explicit adoption with `--adopt` or `adopt()`.
@@ -130,7 +130,7 @@ An existing development or preview reference also requires explicit adoption;
 the default production deployment is attached automatically because Convex
 creates it with the parent project.
 
-The authenticated token must be allowed to access the project. `Project.dir`
+The authenticated token must be allowed to access the project. `Project.rootDir`
 must contain the project's `package.json`; each child deployment invokes that
 project's installed Convex CLI, so no global CLI is required. Override the
 executable with `Convex.providers({ binary: "/path/to/convex" })`.
@@ -146,7 +146,7 @@ const web = yield* Cloudflare.Worker("Web", {
 });
 
 const project = yield* Convex.Project("Backend", {
-  dir: "./apps/backend",
+  rootDir: "./apps/backend",
 });
 
 const backend = yield* Convex.Deployment("BackendDeployment", {
@@ -171,7 +171,7 @@ inputs:
 
 ```ts
 const project = yield* Convex.Project("Backend", {
-  dir: "./apps/backend",
+  rootDir: "./apps/backend",
   source: {
     include: ["convex/**", "packages/domain/**", "package.json", "bun.lock"],
     exclude: ["packages/domain/test/**"],
@@ -195,7 +195,7 @@ Use Alchemy's `retain()` when remote data should survive stack removal:
 import { retain } from "alchemy/RemovalPolicy";
 
 const project = yield* Convex.Project("Backend", {
-  dir: "./apps/backend",
+  rootDir: "./apps/backend",
 }).pipe(retain());
 
 const deployment = yield* Convex.Deployment("BackendDeployment", {
@@ -211,7 +211,7 @@ import { adopt } from "alchemy/AdoptPolicy";
 
 const project = yield* Convex.Project("Backend", {
   name: "existing-project",
-  dir: "./apps/backend",
+  rootDir: "./apps/backend",
 }).pipe(adopt());
 ```
 

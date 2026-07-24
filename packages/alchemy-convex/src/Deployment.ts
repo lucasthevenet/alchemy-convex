@@ -192,7 +192,7 @@ export const DeploymentProvider = () =>
             return { action: "update" as const };
           }
           const sourceHash = yield* hashProject(
-            newProject.dir,
+            newProject.rootDir,
             newProject.source,
           );
           return {
@@ -209,7 +209,10 @@ export const DeploymentProvider = () =>
           }
           const expiresAt = expirationTimestamp(news.expiresAt);
           const environment = news.env ?? ({} satisfies ConvexEnvironment);
-          const sourceHash = yield* hashProject(project.dir, project.source);
+          const sourceHash = yield* hashProject(
+            project.rootDir,
+            project.source,
+          );
 
           const deployment = yield* management.ensureDeployment({
             projectId: project.projectId,
@@ -236,7 +239,7 @@ export const DeploymentProvider = () =>
           });
           const result = yield* cli
             .deploy({
-              projectDir: project.dir,
+              projectDir: project.rootDir,
               deployKey: lease.deployKey,
               environment,
               previousEnvironmentKeys:
